@@ -1,0 +1,98 @@
+version: '3.8'
+
+# 卷（Volumes）定义，用于数据持久化
+volumes:
+  postgres_data:
+  minio_data: # 为 MinIO 添加一个数据卷，提高可移植性
+  redis_data:
+
+# 服务定义
+services:
+  # ----------------------------------------
+  # PostgreSQL 服务 (带 pgvector)
+  # ----------------------------------------
+  postgres:
+    # 容器名称建议和应用名保持一致或有区分度
+    container_name: postgres
+    # 使用预装了 pgvector 的镜像
+    image: ankane/pgvector:latest
+    restart: always
+    environment:
+      POSTGRES_USER: xll
+      POSTGRES_PASSWORD: xll3419552864
+      POSTGRES_DB: tinyaisearch_dev
+    ports:
+      # 映射端口：主机端口 5431 -> 容器端口 5432
+      - "5431:5432"
+    volumes:
+      # 挂载数据卷到容器内，实现数据持久化
+      - postgres_data:/var/lib/postgresql/data
+      # 可选：如果需要初始化脚本，取消下面一行的注释
+      # - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+      
+  # ----------------------------------------
+  # MinIO 服务 (文件存储)
+  # ----------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    # 容器启动失败时自动重启
+    restart: always
+    ports:
+      # MinIO API 端口
+      - "9000:9000"
+      # MinIO Console (管理界面) 端口
+      - "9001:9001"
+    environment:
+      # !!! 必填：请修改为您自己的 Access Key !!!
+      MINIO_ROOT_USER: xll 
+      # !!! 必填：请修改为您自己的 Secret Key/密码 !!!
+      MINIO_ROOT_PASSWORD: xll3419552864
+    volumes:
+      # 使用命名的 Docker 卷 (更灵活、推荐)
+      - minio_data:/data 
+      # 如果您坚持使用主机路径映射，可以使用下面的格式 (并注释掉上面的 minio_data 卷):
+      # - /mnt/minio/data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # ----------------------------------------
+  # Redis 服务 (Celery Broker)
+  # ----------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    ports:
+      # 映射端口：主机端口 6379 -> 容器端口 6379
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ----------------------------------------
+  # Flower 服务 (Celery 监控面板)
+  # ----------------------------------------
+  flower:
+    image: mher/flower
+    container_name: flower
+    restart: always
+    environment:
+      # 连接到Redis Broker
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      # 可选：如果你配置了Result Backend，也需要在这里指定
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    ports:
+      # 映射Flower的Web界面端口
+      - "5555:5555"
+    # Flower需要能连接到Redis，所以它们在同一个网络下
+    depends_on:
+      - redis
