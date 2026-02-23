@@ -1,0 +1,111 @@
+version: '3.8'
+
+services:
+  # ----------------------------------------
+  # PostgreSQL (pgvector)
+  # ----------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: viewrag-postgres
+    environment:
+      - TZ=Asia/Shanghai
+    env_file:
+      - .env.docker
+    volumes:
+      - ./mount/postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - viewrag-network
+
+  # ----------------------------------------
+  # MinIO (文件存储)
+  # ----------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: viewrag-minio
+    environment:
+      - TZ=Asia/Shanghai
+    env_file:
+      - .env.docker
+    volumes:
+      - ./mount/minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: [ "CMD", "mc", "ready", "local" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - viewrag-network
+
+  # ----------------------------------------
+  # Backend (FastAPI)
+  # ----------------------------------------
+  backend:
+    build:
+      context: ../backend
+      dockerfile: backend.Dockerfile
+    container_name: viewrag-backend
+    environment:
+      - TZ=Asia/Shanghai
+    env_file:
+      - .env.docker
+    volumes:
+      # 挂载 config.yaml，前端写入的 API Key 持久化到宿主机
+      - ./config.yaml:/app/config.yaml
+      # 持久化日志
+      - ./mount/backend_logs:/app/logs
+      # 挂载 docs 目录，用于测试 PDF
+      - ../docs:/docs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - viewrag-network
+
+  # ----------------------------------------
+  # Frontend (Vue3 + Nginx)
+  # ----------------------------------------
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: frontend.Dockerfile
+    container_name: viewrag-frontend
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+    networks:
+      - viewrag-network
+
+  # ----------------------------------------
+  # Nginx 反向代理
+  # ----------------------------------------
+  nginx:
+    image: nginx:stable-alpine
+    container_name: viewrag-nginx
+    environment:
+      - TZ=Asia/Shanghai
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+    networks:
+      - viewrag-network
+
+networks:
+  viewrag-network:
+    driver: bridge

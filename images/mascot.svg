@@ -1,0 +1,275 @@
+<svg viewBox="-40 -80 480 540" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <linearGradient id="mainVGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#DD6645" />
+            <stop offset="100%" stop-color="#A42714" />
+        </linearGradient>
+
+        <linearGradient id="headGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#FFFFFF" />
+            <stop offset="100%" stop-color="#FDF3E7" />
+        </linearGradient>
+
+        <filter id="dropShadow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="8" stdDeviation="6" flood-color="#8B1D0E" flood-opacity="0.25" />
+        </filter>
+        
+        <filter id="lightShadow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="2" dy="4" stdDeviation="3" flood-color="#A42714" flood-opacity="0.15" />
+        </filter>
+
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+        </filter>
+
+        <clipPath id="v-clip">
+            <path d="M 100 140 L 200 320 L 300 140" fill="none" stroke="#FFF" stroke-width="75" stroke-linecap="round" stroke-linejoin="round" />
+        </clipPath>
+
+        <style>
+            .mascot-physics {
+                transform-origin: 200px 320px;
+                animation: squashStretch 3s ease-in-out infinite alternate;
+            }
+            .head-physics {
+                transform-origin: 200px 100px;
+                animation: headBob 3s ease-in-out infinite alternate;
+            }
+            .prop-right {
+                animation: floatRight 4s ease-in-out infinite alternate-reverse;
+            }
+            .ground-shadow {
+                animation: shadowPulse 3s ease-in-out infinite alternate;
+                transform-origin: center;
+                transform-box: fill-box;
+            }
+            .eyes-blink {
+                transform-origin: center;
+                transform-box: fill-box;
+                animation: normalBlink 4s infinite;
+            }
+            .bulb-glow-rays {
+                transform-origin: center;
+                transform-box: fill-box;
+                animation: raySpin 2s linear infinite;
+            }
+
+            /* State Transitions via CSS Animation Timeline */
+             /* Total cycle: 12s. 0-4s Idle, 4-8s Thinking, 8-12s Answering */
+
+             /* Visibility tracks */
+            .eyes-normal { animation: showIdle 12s infinite; }
+            .eyes-thinking { animation: showThinking 12s infinite; }
+            .eyes-happy { animation: showAnswering 12s infinite; }
+
+            .story-dots { animation: showIdlePop 12s infinite; }
+            .story-question { animation: showThinkingPop 12s infinite; }
+            .story-bulb { animation: showAnsweringPop 12s infinite; }
+            
+            .arm-right-pos { animation: armCycle 12s infinite; }
+            .arm-right-anim { animation: scratchCycle 12s infinite; }
+
+            /* Keyframes for visibility states */
+            @keyframes showIdle {
+                0%, 30% { opacity: 1; }
+                33%, 100% { opacity: 0; }
+            }
+            @keyframes showThinking {
+                0%, 30% { opacity: 0; }
+                33%, 63% { opacity: 1; }
+                66%, 100% { opacity: 0; }
+            }
+            @keyframes showAnswering {
+                0%, 63% { opacity: 0; }
+                66%, 96% { opacity: 1; }
+                100% { opacity: 0; } /* Loop back */
+            }
+
+            /* Pop animations for bubble content */
+            @keyframes showIdlePop {
+                0%, 30% { opacity: 1; transform: scale(1); }
+                33%, 100% { opacity: 0; transform: scale(0); }
+            }
+            @keyframes showThinkingPop {
+                0%, 30% { opacity: 0; transform: scale(0); }
+                33%, 63% { opacity: 1; transform: scale(1.1); }
+                66%, 100% { opacity: 0; transform: scale(0); }
+            }
+            @keyframes showAnsweringPop {
+                0%, 63% { opacity: 0; transform: scale(0); }
+                66%, 96% { opacity: 1; transform: scale(1); }
+                100% { opacity: 0; transform: scale(0); }
+            }
+
+            /* Arm Animation */
+            @keyframes armCycle {
+                /* Idle */
+                0%, 30% { transform: translate(0, 0) rotate(-15deg); }
+                /* Transition to Thinking */
+                33%, 63% { transform: translate(-30px, -110px) rotate(-25deg); }
+                /* Transition to Answering */
+                66%, 96% { transform: translate(0, 0) rotate(-15deg); }
+                100% { transform: translate(0, 0) rotate(-15deg); }
+            }
+            
+            @keyframes scratchCycle {
+                /* Only scratch during Thinking phase (33-63%) */
+                0%, 30% { transform: rotate(0deg) translateY(0); }
+                33% { transform: rotate(0deg) translateY(0); }
+                38% { transform: rotate(15deg) translateY(5px); }
+                43% { transform: rotate(0deg) translateY(0); }
+                48% { transform: rotate(15deg) translateY(5px); }
+                53% { transform: rotate(0deg) translateY(0); }
+                58% { transform: rotate(15deg) translateY(5px); }
+                63% { transform: rotate(0deg) translateY(0); }
+                100% { transform: rotate(0deg) translateY(0); }
+            }
+
+
+            /* Original Keyframes */
+            @keyframes squashStretch {
+                0% { transform: translateY(0px) scaleX(1) scaleY(1); }
+                100% { transform: translateY(-12px) scaleX(0.97) scaleY(1.03); }
+            }
+            @keyframes headBob {
+                0% { transform: translateY(0px) rotate(0deg); }
+                100% { transform: translateY(4px) rotate(2deg); }
+            }
+            @keyframes floatRight {
+                0% { transform: translateY(0px) rotate(5deg); }
+                100% { transform: translateY(-10px) rotate(8deg); }
+            }
+            @keyframes shadowPulse {
+                0% { transform: scale(1); opacity: 0.2; }
+                100% { transform: scale(0.85); opacity: 0.08; }
+            }
+            @keyframes normalBlink {
+                0%, 46%, 50%, 96%, 100% { transform: scaleY(1); }
+                48%, 98% { transform: scaleY(0.1); }
+            }
+            @keyframes raySpin {
+                0% { transform: rotate(0deg) scale(1); opacity: 0.6; }
+                50% { transform: rotate(45deg) scale(1.1); opacity: 1; }
+                100% { transform: rotate(90deg) scale(1); opacity: 0.6; }
+            }
+        </style>
+    </defs>
+
+    <ellipse class="ground-shadow" cx="200" cy="400" rx="60" ry="10" fill="#8B1D0E" />
+
+    <g class="mascot-physics">
+        <!-- 1. V Body -->
+        <g class="body-main" filter="url(#dropShadow)">
+            <path d="M 100 140 L 200 320 L 300 140" fill="none" stroke="url(#mainVGrad)" stroke-width="75" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M 85 135 L 180 305" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" opacity="0.25" />
+            <path d="M 315 135 L 220 305" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" opacity="0.1" />
+
+            <!-- Inner Circuit Nodes -->
+            <g clip-path="url(#v-clip)" opacity="0.4">
+                <path d="M 110 180 L 140 230 L 180 230 L 200 270" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+                <circle cx="110" cy="180" r="5" fill="#FFFFFF" />
+                <circle cx="200" cy="270" r="5" fill="#FFFFFF" />
+                <path d="M 280 200 L 250 240 L 210 240" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+                <circle cx="280" cy="200" r="4" fill="#FFFFFF" />
+                <circle cx="210" cy="240" r="4" fill="#FFFFFF" />
+            </g>
+        </g>
+
+        <!-- 2. Right Bubble -->
+        <g transform="translate(290, 70)">
+            <g class="prop-right" filter="url(#dropShadow)">
+                <path d="M -35 -25 H 25 A 15 15 0 0 1 40 -10 V 15 A 15 15 0 0 1 25 30 H 10 L -5 45 L 0 30 H -35 A 15 15 0 0 1 -50 15 V -10 A 15 15 0 0 1 -35 -25 Z" fill="#FDF3E7" />
+                <path d="M -35 -25 H 25 A 15 15 0 0 1 40 -10 V 0 H -50 V -10 A 15 15 0 0 1 -35 -25 Z" fill="#FFFFFF" opacity="0.7" />
+                
+                <g transform="translate(-5, 0)"> 
+                    <!-- Idle (...) -->
+                    <g class="story-dots">
+                        <circle cx="-15" cy="3" r="4" fill="#B22E1A" />
+                        <circle cx="0" cy="3" r="4" fill="#B22E1A" />
+                        <circle cx="15" cy="3" r="4" fill="#B22E1A" />
+                    </g>
+
+                    <!-- Thinking (?) -->
+                    <g class="story-question">
+                        <g transform="translate(-2, 6) scale(0.65)"> 
+                            <path d="M -10 -20 C -10 -35, 12 -35, 12 -20 C 12 -5, -2 -5, -2 5" fill="none" stroke="#DD6645" stroke-width="8" stroke-linecap="round" />
+                            <circle cx="-2" cy="18" r="5" fill="#DD6645" />
+                        </g>
+                    </g>
+
+                    <!-- Answering (Bulb) -->
+                    <g class="story-bulb">
+                        <g transform="translate(-2, 12) scale(0.7)">
+                            <g class="bulb-glow-rays" stroke="#FFD700" stroke-width="4" stroke-linecap="round" opacity="0.8">
+                                <line x1="0" y1="-38" x2="0" y2="-48" />
+                                <line x1="-25" y1="-15" x2="-35" y2="-15" />
+                                <line x1="25" y1="-15" x2="35" y2="-15" />
+                                <line x1="-18" y1="-32" x2="-25" y2="-39" />
+                                <line x1="18" y1="-32" x2="25" y2="-39" />
+                            </g>
+                            <g filter="url(#glow)">
+                                <circle cx="0" cy="-15" r="16" fill="#FFD700" />
+                                <rect x="-8" y="-1" width="16" height="10" rx="2" fill="#A42714" />
+                                <line x1="-6" y1="2" x2="6" y2="2" stroke="#FFFFFF" stroke-width="2" opacity="0.5"/>
+                                <line x1="-6" y1="6" x2="6" y2="6" stroke="#FFFFFF" stroke-width="2" opacity="0.5"/>
+                                <path d="M -8 -22 A 10 10 0 0 1 0 -28" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+                            </g>
+                        </g>
+                    </g>
+                </g>
+            </g>
+        </g>
+
+        <!-- Left Arm -->
+        <g transform="translate(70, 240) rotate(15)">
+            <rect x="-12" y="-18" width="24" height="36" rx="12" fill="#DD6645" filter="url(#lightShadow)"/>
+            <path d="M -6 -10 V 10" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity="0.3"/>
+        </g>
+
+        <!-- Right Arm -->
+        <g transform="translate(330, 240)">
+            <g class="arm-right-pos" filter="url(#lightShadow)">
+                <g class="arm-right-anim">
+                    <rect x="-12" y="-18" width="24" height="36" rx="12" fill="#DD6645" />
+                    <path d="M -6 -10 V 10" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity="0.3"/>
+                </g>
+            </g>
+        </g>
+
+    </g>
+
+    <!-- Head & Face -->
+    <g class="head-physics">
+        <rect x="130" y="45" width="140" height="110" rx="40" fill="url(#headGrad)" stroke="url(#mainVGrad)" stroke-width="10" filter="url(#dropShadow)" />
+        <path d="M 150 63 Q 200 53 250 63" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" opacity="0.9" />
+        <circle cx="160" cy="115" r="12" fill="#FF9A8B" opacity="0.5" />
+        <circle cx="240" cy="115" r="12" fill="#FF9A8B" opacity="0.5" />
+
+        <!-- Eyes Switch System -->
+        <g transform="translate(0, 15)">
+            <g class="eyes-normal">
+                <g class="eyes-blink">
+                    <circle cx="175" cy="85" r="8" fill="#4A180E" />
+                    <circle cx="225" cy="85" r="8" fill="#4A180E" />
+                    <circle cx="172" cy="82" r="2.5" fill="#FFFFFF" />
+                    <circle cx="222" cy="82" r="2.5" fill="#FFFFFF" />
+                </g>
+                <path d="M 190 100 Q 200 110 210 100" fill="none" stroke="#4A180E" stroke-width="4.5" stroke-linecap="round" />
+            </g>
+
+            <g class="eyes-thinking">
+                <path d="M 168 85 L 182 85" fill="none" stroke="#4A180E" stroke-width="6" stroke-linecap="round" />
+                <circle cx="225" cy="83" r="10" fill="#4A180E" />
+                <circle cx="221" cy="80" r="3" fill="#FFFFFF" />
+                <path d="M 195 102 Q 200 100 205 103" fill="none" stroke="#4A180E" stroke-width="4" stroke-linecap="round" />
+            </g>
+
+            <g class="eyes-happy">
+                <path d="M 168 88 Q 175 78 182 88" fill="none" stroke="#4A180E" stroke-width="5" stroke-linecap="round" />
+                <path d="M 218 88 Q 225 78 232 88" fill="none" stroke="#4A180E" stroke-width="5" stroke-linecap="round" />
+                <path d="M 188 100 Q 200 115 212 100" fill="none" stroke="#4A180E" stroke-width="4.5" stroke-linecap="round" />
+            </g>
+        </g>
+    </g>
+</svg>

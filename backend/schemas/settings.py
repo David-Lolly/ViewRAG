@@ -13,14 +13,12 @@ class ModelConfigBase(BaseModel):
 
 class ChatModelConfig(ModelConfigBase):
     """对话模型配置"""
-    type: Optional[str] = "text-model"  # text-model 或 multi-model
+    type: Optional[str] = "text-model"  # text-model, multi-model, reason-model
     is_default: Optional[bool] = False
 
 
 class BasicConfig(BaseModel):
     """基础配置"""
-    RETRIEVAL_VERSION: Optional[str] = "v2"
-    RETRIEVAL_QUALITY: Optional[str] = "high"
     IS_ACTIVE: Optional[bool] = False
 
 
@@ -48,9 +46,15 @@ class ModelConfig(BaseModel):
     Rerank: Optional[RerankConfig] = None
 
 
+class OCRConfig(BaseModel):
+    """OCR 配置"""
+    parser: str = "paddle_ocr"  # paddle_ocr, monkey_ocr
+    paddle_ocr: Optional[Dict[str, Any]] = None
+
 class SystemConfig(BaseModel):
     """完整系统配置"""
     Basic_Config: Optional[BasicConfig] = None
+    OCR_Config: Optional[OCRConfig] = None
     Model_Config: Optional[ModelConfig] = None
 
 

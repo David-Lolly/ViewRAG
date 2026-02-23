@@ -151,7 +151,7 @@ const props = defineProps({
   status: {
     type: String,
     required: true,
-    validator: (value) => ['UPLOADING', 'PARSING', 'CHUNKING', 'PROCESSING', 'EMBEDDING', 'COMPLETED', 'FAILED'].includes(value)
+    validator: (value) => ['QUEUED', 'PARSING', 'CHUNKING', 'ENRICHING', 'VECTORIZING', 'COMPLETED', 'FAILED'].includes(value)
   },
   // 进度百分比（0-100）
   progress: {
@@ -184,11 +184,11 @@ const showError = ref(false);
 
 // 处理步骤定义
 const steps = [
-  { name: '上传中', status: 'UPLOADING' },
+  { name: '排队中', status: 'QUEUED' },
   { name: '解析中', status: 'PARSING' },
   { name: '分段中', status: 'CHUNKING' },
-  { name: '处理表格和图片', status: 'PROCESSING' },
-  { name: '向量化嵌入', status: 'EMBEDDING' },
+  { name: '内容增强', status: 'ENRICHING' },
+  { name: '向量化', status: 'VECTORIZING' },
   { name: '完成', status: 'COMPLETED' }
 ];
 
@@ -199,7 +199,7 @@ const currentStepIndex = computed(() => {
 
 // 是否正在处理中
 const isProcessing = computed(() => {
-  return ['UPLOADING', 'PARSING', 'CHUNKING', 'PROCESSING', 'EMBEDDING'].includes(props.status);
+  return ['QUEUED', 'PARSING', 'CHUNKING', 'ENRICHING', 'VECTORIZING'].includes(props.status);
 });
 
 // 进度条颜色

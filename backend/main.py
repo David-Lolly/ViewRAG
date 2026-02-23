@@ -22,6 +22,8 @@ from routers.llm import router as llm_router
 from routers.settings import router as settings_router
 from routers.session_documents import router as session_docs_router
 from routers.knowledge_base import router as kb_router
+from routers.images import router as images_router
+from routers.documents import router as documents_router
 # 设置日志
 dir_path = './logs'
 file_name = 'app.log'
@@ -50,14 +52,12 @@ def setup_logging():
     # logging.getLogger().addHandler(console_handler)
 
     third_party_loggers = [
-        'duckduckgo_search',
         'httpx',
         'requests',
         'urllib3',
         'openai',
         'langchain',
         'langchain_core',
-        'baidusearch',
         'uvicorn',
         'fastapi',         
     ]
@@ -125,6 +125,8 @@ app.include_router(files.router)
 
 app.include_router(session_docs_router, tags=["会话文档"])
 app.include_router(kb_router, tags=["知识库"])
+app.include_router(images_router)
+app.include_router(documents_router, tags=["文档"])
 
 @app.get("/")
 async def root():

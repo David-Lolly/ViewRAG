@@ -56,6 +56,32 @@
               </button>
             </div>
 
+            <!-- 推理模型组 -->
+            <div v-if="reasonModels.length > 0" class="mt-1 pt-1 border-t border-gray-100">
+              <div class="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                推理模型
+              </div>
+              <button
+                v-for="model in reasonModels"
+                :key="model.name"
+                @click="selectModel(model)"
+                class="w-full text-left px-3 py-2 rounded-md hover:bg-gray-50 transition-colors duration-150"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="flex-1 min-w-0">
+                    <p class="font-medium text-sm text-gray-900">{{ model.name }}</p>
+                    <p class="text-xs text-gray-500 mt-0.5 line-clamp-1">
+                      {{ model.description || '暂无描述' }}
+                    </p>
+                  </div>
+                  <CheckIcon
+                    v-if="selectedModel?.name === model.name"
+                    class="w-4 h-4 text-indigo-600 flex-shrink-0 ml-2"
+                  />
+                </div>
+              </button>
+            </div>
+
             <!-- 多模态模型组 -->
             <div v-if="multiModels.length > 0" class="mt-1 pt-1 border-t border-gray-100">
               <div class="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -111,6 +137,11 @@ const dropdownStyle = ref({});
 // 文本模型列表
 const textModels = computed(() => {
   return props.models.filter(model => model.type === 'text-model' || !model.type);
+});
+
+// 推理模型列表
+const reasonModels = computed(() => {
+  return props.models.filter(model => model.type === 'reason-model');
 });
 
 // 多模态模型列表

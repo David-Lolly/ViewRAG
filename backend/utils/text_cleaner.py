@@ -8,7 +8,10 @@ logger = logging.getLogger(__name__)
 
 def clean_markdown(text: str) -> str:
     """
-    清洗pymupdf4llm解析出的Markdown文本
+    清洗 Markdown 文本
+    
+    注意: 此函数原用于清洗 pymupdf4llm 解析的文本，
+    现在也可用于清洗其他来源的 Markdown 文本。
     
     主要清洗内容：
     1. 移除乱码字符

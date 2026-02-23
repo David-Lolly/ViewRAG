@@ -118,38 +118,17 @@
               </div>
             </div>
           </div>
-
-          <!-- 总体进度 -->
-          <div v-if="uploading" class="mt-5 p-4 bg-blue-50 rounded-lg">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-sm font-medium text-blue-900">上传进度</span>
-              <span class="text-sm font-semibold text-blue-900">
-                {{ uploadProgress.current }} / {{ uploadProgress.total }}
-              </span>
-            </div>
-            <div class="h-2 bg-blue-200 rounded-full overflow-hidden">
-              <div
-                class="h-full bg-blue-600 transition-all duration-300"
-                :style="{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }"
-              ></div>
-            </div>
-            <p class="text-xs text-blue-700 mt-2">
-              正在上传: {{ uploadProgress.currentFile }}
-            </p>
-          </div>
         </div>
 
         <!-- 对话框底部 -->
         <div class="px-6 py-4 bg-gray-50 rounded-b-2xl flex items-center justify-end space-x-3">
           <button
-            v-if="!uploading"
             @click="closeUploadDialog"
             class="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
           >
             取消
           </button>
           <button
-            v-if="!uploading"
             @click="startUpload"
             :disabled="selectedFiles.length === 0"
             class="px-5 py-2 rounded-lg transition-colors font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
@@ -158,16 +137,6 @@
             @mouseleave="selectedFiles.length > 0 && ($event.target.style.backgroundColor = 'rgb(201, 100, 66)')"
           >
             开始上传
-          </button>
-          <button
-            v-else
-            @click="closeUploadDialog"
-            class="px-5 py-2 rounded-lg transition-colors font-medium"
-            style="background-color: rgb(34, 197, 94); color: white;"
-            @mouseenter="$event.target.style.backgroundColor = 'rgb(22, 163, 74)'"
-            @mouseleave="$event.target.style.backgroundColor = 'rgb(34, 197, 94)'"
-          >
-            后台运行
           </button>
         </div>
       </div>
@@ -188,8 +157,8 @@ const props = defineProps({
 
 const emit = defineEmits(['upload-complete']);
 
-// 支持的文件类型
-const acceptedFileTypes = '.pdf,.docx,.doc,.txt,.md,.pptx,.ppt,.png,.jpg,.jpeg';
+// 目前仅支持 PDF 文档
+const acceptedFileTypes = '.pdf';
 
 // 状态
 const fileInput = ref(null);
@@ -197,11 +166,6 @@ const selectedFiles = ref([]);
 const uploading = ref(false);
 const showUploadDialog = ref(false);
 const uploadStatus = reactive({});
-const uploadProgress = reactive({
-  current: 0,
-  total: 0,
-  currentFile: ''
-});
 
 // 触发文件选择
 const triggerFileInput = () => {
@@ -232,53 +196,30 @@ const handleFileSelect = (event) => {
 const startUpload = async () => {
   if (selectedFiles.value.length === 0) return;
 
+  // 保存文件引用，因为关闭弹窗会清空
+  const filesToUpload = [...selectedFiles.value];
+  
+  // 立即关闭弹窗，后台开始上传
+  showUploadDialog.value = false;
+  selectedFiles.value = [];
+  Object.keys(uploadStatus).forEach(key => delete uploadStatus[key]);
+
   uploading.value = true;
-  uploadProgress.current = 0;
-  uploadProgress.total = selectedFiles.value.length;
 
   try {
     // 调用上传 API
-    await uploadDocuments(
+    const response = await uploadDocuments(
       props.kbId,
-      selectedFiles.value,
-      (progress) => {
-        // 更新进度
-        uploadProgress.current = progress.current;
-        uploadProgress.currentFile = progress.currentFile;
-        
-        // 更新当前文件状态
-        if (progress.current > 0) {
-          uploadStatus[progress.current - 1] = 'success';
-        }
-        if (progress.current < uploadProgress.total) {
-          uploadStatus[progress.current] = 'uploading';
-        }
-      }
+      filesToUpload,
+      () => {} // 不需要进度回调
     );
 
-    // 所有文件上传完成
-    selectedFiles.value.forEach((_, index) => {
-      uploadStatus[index] = 'success';
-    });
-
     // 通知父组件刷新列表
-    emit('upload-complete');
-
-    // 延迟关闭对话框
-    setTimeout(() => {
-      closeUploadDialog();
-    }, 1000);
+    emit('upload-complete', response?.data?.documents || []);
 
   } catch (error) {
     console.error('上传失败:', error);
     alert('上传失败，请稍后重试');
-    
-    // 标记失败的文件
-    selectedFiles.value.forEach((_, index) => {
-      if (uploadStatus[index] !== 'success') {
-        uploadStatus[index] = 'error';
-      }
-    });
   } finally {
     uploading.value = false;
   }
@@ -286,19 +227,9 @@ const startUpload = async () => {
 
 // 关闭上传对话框
 const closeUploadDialog = () => {
-  if (uploading.value) {
-    // 如果正在上传，询问确认
-    if (!confirm('文档正在上传中，确定要关闭吗？上传将在后台继续。')) {
-      return;
-    }
-  }
-  
   showUploadDialog.value = false;
   selectedFiles.value = [];
   Object.keys(uploadStatus).forEach(key => delete uploadStatus[key]);
-  uploadProgress.current = 0;
-  uploadProgress.total = 0;
-  uploadProgress.currentFile = '';
 };
 
 // 格式化文件大小

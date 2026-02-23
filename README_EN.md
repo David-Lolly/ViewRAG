@@ -1,300 +1,240 @@
-# TinyAISearch
 
-[ [中文](README.md) | English ]
-
-<img src="./images/ChatMessage.png"  width="100%" />
+<div align="center">
+  <img src="images/mascot.svg" width="120" alt="ViewRAG Mascot">
+  <br>
+  <h1>ViewRAG</h1>
+  
+  [ [中文](README.md) | English ]
+</div>
 
 ---
 
-**TinyAISearch** is a lightweight AI search project that implements the complete RAG process, from **search query analysis** and **web page crawling** to **content retrieval** and **streaming responses**.
+**ViewRAG** is a RAG (Retrieval-Augmented Generation) system focused on **intelligent PDF parsing and illustrated Q&A**.
 
-The project integrates various retrieval strategies (such as similarity, BM25, and multi-path retrieval), allowing for flexible configuration so you can explore the pros and cons of different approaches. It is also compatible with any large model that supports the OpenAI API (e.g., Qwen, DeepSeek, GLM, Ollama).
+The **core value** of the project lies in breaking the text-only limitation of traditional RAG by leveraging the deep understanding capabilities of Large Language Models (LLMs) to achieve **precise recall of images and tables** within documents. By combining MinIO object storage with carefully designed Prompts, the system guides the LLM to naturally interleave images in its responses, avoiding issues with long image URLs. Furthermore, the system synchronizes reference sources back to the frontend, enabling **real-time image rendering and strict PDF citation tracing**, effectively solving the trust issue associated with LLM answers.
 
-The frontend is built with **Vue 3**, featuring a clean, modern interface that supports multi-user and multi-session capabilities. We hope you enjoy using it!
+<img src="./images/QA.png" width="100%" />
 
-## Screenshots
+## 🌟 Core Highlights
 
-### Main Interface
+- **Illustrated Q&A Experience**: The LLM can inline reference images in its answers, which are rendered in real-time on the frontend, providing a rich experience similar to reading the original document.
+- **Precise Citation Tracing**: Answers automatically include citation numbers. The frontend displays the corresponding document page numbers, snippets, and image previews. Clicking highlights the location in the embedded PDF, resolving LLM trust issues.
+- **Layout-Aware Smart Chunking**: Abandoning traditional fixed-length/recursive chunking that destroys information continuity. It fully utilizes PDF parsing results to preserve original paragraph structures, automatically merging headers with body text, and intelligently stitching small chunks (block size 1024), balancing semantic integrity and retrieval precision.
+- **Deep Understanding of Charts**: For images and tables in PDFs, Vision LLMs and text generation models are called to generate structured semantic descriptions, which are converted into vectors for subsequent recall, significantly improving the retrieval hit rate for chart contents.
+- **Comprehensive Model Support**: Supports flexible model selection and switching, fully compatible with **text generation models, multimodal models, and reasoning models**.
+- **Ultimate Interactive Experience**: Supports editing questions and regenerating from any dialogue node; real-time SSE progress push for document processing.
 
-**1. Login Interface**
+## 📸 Interface Preview
 
-<img src="./images/Login.png" width="80%" />
+| Model Selection (Text/Multimodal/Reasoning)    | Main Chat Interface                          |
+| ---------------------------------------------- | -------------------------------------------- |
+| <img src="./images/models.png" width="100%" /> | <img src="./images/home.png" width="100%" /> |
 
-**2. Main Application Interface**
+| Citation Tracing (Solving Trust Issues)      | PDF Highlight Tracing                             |
+| -------------------------------------------- | ------------------------------------------------- |
+| <img src="./images/cite.png" width="100%" /> | <img src="./images/highlight.png" width="100%" /> |
 
-<img src="./images/ChatView.png" width="80%" />
+| PDF Layout Analysis                           | Layout-Based Smart Chunking (Note: IDs indicate same chunk) |
+| --------------------------------------------- | ----------------------------------------------------------- |
+| <img src="./images/parse.png" width="100%" /> | <img src="./images/chunk.png" width="100%" />               |
 
-### Core Features Demo
+| Deep Reasoning (Reasoning)                     | Visual Understanding (Vision Language)     |
+| ---------------------------------------------- | ------------------------------------------ |
+| <img src="./images/Reason.png" width="100%" /> | <img src="./images/VL.png" width="100%" /> |
 
-**Daily Conversation Feature**
+| Edit & Regenerate at Any Node                | Knowledge Base Management                  |
+| -------------------------------------------- | ------------------------------------------ |
+| <img src="./images/edit.png" width="100%" /> | <img src="./images/kb.png" width="100%" /> |
 
-<img src="./images/ChatMessage.png" width="80%" />
+## ⚙️ Core Features
 
-**Internet Search Feature**
+- **High-Quality PDF Parsing**: Integrates with PaddleX Layout Analysis API to identify layout elements such as text, titles, images, tables, and formulas, and accurately extract bbox coordinates.
+- **Vector Retrieval**: Semantic vector retrieval based on pgvector, supporting precise filtering by session/knowledge base scope.
+- **Query Rewriting**: Automatically completes pronouns based on dialogue history to improve retrieval accuracy in multi-turn dialogues.
+- **Knowledge Base Management**: Supports creating permanent knowledge bases and uploading multiple PDFs for unified retrieval.
+- **Session Documents**: Supports temporary PDF uploads within a dialogue, searchable only within the current session.
+- **Multi-User / Multi-Session**: Independent account system with isolated sessions and knowledge bases for each user.
+- **Any LLM Compatibility**: All models are accessed via OpenAI-compatible APIs, supporting Qwen, DeepSeek, GLM, Ollama, etc.
 
-<img src="./images/Search.png" width="80%" />
+## System Architecture
 
-**Answer Source Tracing**
-
-<img src="./images/Reference.png" width="80%" />
-
-## Features
-
-- **Smart Search Planning**: Analyzes user queries to dynamically generate a search plan.
-- **Multiple Retrieval Strategies**: Includes both **V1 (Traditional RAG)** and **V2 (Page-Level Retrieval)** modes, with support for similarity, BM25, and RRF multi-path retrieval and reranking.
-- **Highly Extensible**: Supports any **LLM** compatible with the OpenAI API.
-- **Modern Frontend**: Built with **Vue 3 + Vite**, featuring an elegant UI with multi-user and multi-session support.
-- **Out-of-the-Box**: Comes with a detailed deployment guide to get you up and running in minutes.
-
-## Deployment Guide
-
-### System Requirements
-
-Depending on your chosen deployment method, please ensure your environment meets the following requirements:
-
-#### Docker Deployment (Recommended)
-- **Docker**: 20.10.0 or higher
-- **Docker Compose**: v2.0 or higher
-
-#### Source Code Deployment
-- **Node.js**: v18.0 or higher
-- **Python**: v3.10
-- **Conda**: For managing Python virtual environments
-
-### Download Project
-
-First, clone the project repository to your local machine:
-
-```bash
-git clone https://github.com/David-Lolly/TinyAISearch.git
-cd TinyAISearch
+```
+┌─────────────────────────────────────────────────────────┐
+│                       Nginx (8080)                       │
+│      Reverse Proxy + SSE No-Buffering + Large File Upload │
+└────────────────┬──────────────────┬─────────────────────┘
+                 │                  │
+        ┌────────▼──────┐   ┌───────▼────────┐
+        │  Frontend      │   │  Backend        │
+        │  Vue3 + Vite   │   │  FastAPI        │
+        │  Nginx Static  │   │  Python 3.10    │
+        └───────────────┘   └───────┬─────────┘
+                                    │
+              ┌─────────────────────┼──────────────────────┐
+              │                     │                       │
+     ┌────────▼────────┐  ┌─────────▼──────┐  ┌───────────▼───────┐
+     │  PostgreSQL      │  │    MinIO        │  │  PaddleX API      │
+     │  + pgvector      │  │  Files / Images │  │  PDF Layout       │
+     │  Vector + Meta   │  │  Object Storage │  │  Analysis         │
+     └─────────────────┘  └────────────────┘  └───────────────────┘
 ```
 
-### Method 1: Docker Deployment (Recommended)
+**PDF Processing Pipeline:**
 
-Docker deployment is the simplest and fastest way, requiring no manual environment configuration.
-
-#### 1. Start Services
-
-```bash
-# Execute in the project root directory
-docker-compose up -d
+```
+Upload PDF
+  → PaddleX API Layout Analysis (Identify Text/Image/Table/Formula Blocks)
+  → PyMuPDF Crop Images by bbox → Upload to MinIO
+  → Block Chunker (Text Merge / Chart Independent)
+  → Vision LLM Image Description / LLM Table Summary (KB Mode)
+  → Embedding Vectorization → Save to pgvector
 ```
 
-#### 2. Verify Deployment
+**RAG Retrieval Pipeline:**
 
-```bash
-# Check container running status
-docker-compose ps
+```
+User Query
+  → QueryRewrite
+  → Embedding Query Vectorization
+  → pgvector Similarity Search (Filter by kb_id / session_id)
+  → ContextBuilder Build Context + Assign Citation IDs
+  → REFERENCE_SYSTEM_PROMPT Inject Citation Rules
+  → LLM Stream Generation (SSE Push)
+  → Frontend Parse image:ImageN Render Image + [N] Render Badge
 ```
 
-#### 3. Access Application
+## Quick Deployment
 
-After container build completion, access in your browser:
-- **Frontend Interface**: http://localhost:8080
+### Environment Requirements
 
-#### 4. Stop Services
+- **Docker** ≥ 20.10
+- **Docker Compose** ≥ v2.0
+
+### 1. Clone Project
 
 ```bash
-# Stop and remove containers
-docker-compose down
+git clone https://github.com/David-Lolly/ViewRAG.git
+cd ViewRAG
 ```
 
-### Method 2: Source Code Deployment
-
-Source code deployment is suitable for users who need secondary development or deep customization.
-
-#### 1. Backend Environment Setup
+### 2. Start Services
 
 ```bash
-# Create and activate Conda virtual environment
-conda create -n TinyAISearch python=3.10
-conda activate TinyAISearch
+cd docker
+docker compose build
+docker compose up -d
+```
 
-# Install Python dependencies (domestic mirror recommended for faster downloads)
+First run will automatically build images, wait about 3~5 minutes.
+
+### 3. Access Application
+
+```
+http://localhost:8080
+```
+
+### 4. Complete Model Configuration
+
+After logging in for the first time, go to the **Configuration Page**. You can select a provider to quickly complete the configuration or manually fill in model information (all support OpenAI-compatible APIs):
+
+| Configuration Item          | Usage                             | Recommended Models       |
+| --------------------------- | --------------------------------- | ------------------------ |
+| **Chat Model (Text)**       | Daily Chat / RAG QA               | qwen-plus, deepseek-chat |
+| **Chat Model (Multimodal)** | Chat with Images                  | qwen-vl-plus             |
+| **Vision Model**            | PDF Image Understanding           | qwen-vl-flash            |
+| **Summary Model**           | Doc Summary / Table Understanding | qwen-flash               |
+| **Embedding Model**         | Text Vectorization                | text-embedding-v4        |
+| **Rerank Model**            | Result Re-ranking                 | gte-rerank-v2            |
+| **PaddleX API**             | PDF Layout Analysis (Required)    | See below                |
+
+> **Get PaddleX API**: Go to [AI Studio](https://aistudio.baidu.com/paddleocr) to get the PaddleX Layout Analysis service, fill `api_url` and `api_token` into the configuration page.
+>
+> **Recommended Providers**: [Aliyun Bailian](https://bailian.console.aliyun.com/) (Qwen series), [SiliconFlow](https://cloud.siliconflow.cn/) (Free tier available), and any provider compatible with OpenAI API.
+
+After configuration, click the **Test Connection** button for each item. Once all pass, save to start using.
+
+---
+
+### Source Code Deployment (For Developers)
+
+Requires self-deployment of PostgreSQL (with pgvector extension) and MinIO, and filling in connection info in `backend/.env`.
+
+**Backend:**
+
+```bash
+conda create -n viewrag python=3.10
+conda activate viewrag
+cd backend
 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+python main.py
 ```
 
-#### 2. Frontend Environment Setup
+**Frontend:**
 
 ```bash
-# Enter frontend directory
 cd frontend
-
-# Configure npm registry (optional, for faster dependency downloads)
-npm config set registry https://registry.npmmirror.com
-
-# Install frontend dependencies
 npm install
-```
-
-#### 3. Start Services
-
-You need to start both frontend and backend services simultaneously. It's recommended to open two terminal windows:
-
-**Terminal 1: Start Backend Service**
-```bash
-# In project root directory TinyAISearch/
-conda activate TinyAISearch
-python AISearchServer.py
-```
-> Seeing `Uvicorn running on http://localhost:5000` indicates successful backend startup
-
-**Terminal 2: Start Frontend Service**
-```bash
-# In frontend/ directory
 npm run dev
 ```
-> Frontend service typically runs on `http://localhost:5173`, please check terminal output for actual address
 
-#### 4. Access Application
+## Project Structure
 
-After both frontend and backend start successfully, access the frontend address in your browser to begin using.
-
-### Initial Configuration
-
-Regardless of deployment method, initial use requires completing the following configuration steps:
-
-#### 1. User Registration
-
-After accessing the application, you first need to register an account. Username and password can be set arbitrarily, and the system will automatically create a local account.
-
-#### 2. Model Configuration
-
-After successful login, you'll automatically be redirected to the configuration page where you need to fill in the following necessary information:
-
-**Retrieval Mode Selection**:
-- **V2 (Recommended)**: Innovative page-level retrieval mode, better suited for internet search scenarios
-- **V1**: Traditional RAG mode based on text chunk retrieval
-
-**V1 Retrieval Quality** (only needed when V1 mode is selected):
-- `high`: Similarity search + Rerank reordering
-- `higher`: Multi-path retrieval (Similarity + BM25) + RRF fusion
-
-**Model Configuration**:
-- **LLM Model**: Fill in API Key and Base URL
-- **Embedding Model**: Fill in API Key and Base URL
-- **Rerank Model** (not required for V2 mode): Fill in API Key and Base URL
-
-**Recommended Service Providers**:
-- [SiliconFlow](https://cloud.siliconflow.cn/account/ak): Provides free model service quotas
-- Other OpenAI API compatible service providers
-
-**Search Engine Configuration**:
-- **Primary Search**: Uses DuckDuckGo by default (no configuration needed)
-- **Backup Search** (optional): Google Programmable Search API (100 free calls per day)
-
-#### 3. Connection Testing
-
-After configuration, click the "Connection Test" button on the right side of each configuration item. Ensure all required items pass connection testing before saving configuration and starting to use.
-
-#### 4. Start Using
-
-After successful configuration save, you can begin your AI search experience!
-
-### Frequently Asked Questions
-
-**Q: What to do if container startup fails during Docker deployment?**
-A: Please check port usage to ensure ports 8080 and 5000 are not occupied by other programs. Use `docker-compose logs` to view detailed error information.
-
-**Q: What to do if dependency installation fails during source code deployment?**
-A: It's recommended to use domestic mirror sources. If network issues occur, try using VPN or changing mirror sources.
-
-**Q: What to do if connection testing fails after configuration?**
-A: Please check if API Key is correct, if Base URL is accessible, and if network connection is normal.
-B: If Google connection fails, check if API Key and CSE are filled correctly, and verify if proxy is enabled.
-
-## Technical Implementation
-
-### API Documentation:
-Please check the corresponding API documentation in the doc directory to understand the specific functions and parameter passing of each backend module.
-
-<details>
-<summary><strong>V1 Retrieval Mode (Click to Expand)</strong></summary>
-
--   **High Quality**: Embeds the user query, performs a similarity search in the vector database, and reranks the retrieved text chunks.
--   **Higher Quality**:
-    1.  **Multi-Path Query Generation**: The LLM generates multiple derivative questions from the user's original query.
-    2.  **Multi-Path Retrieval**: Performs both **similarity search** and **BM25 sparse retrieval** for all generated questions.
-    3.  **RRF Fusion**: Uses the **Reciprocal Rank Fusion** algorithm to merge the results from all paths, improving precision.
-    <br>
-    <img src="./images/multi_query_retrieval.png"  width="900" />
-</details>
-
-<details>
-<summary><strong>V2 Retrieval Mode (Click to Expand)</strong></summary>
-
-The V2 mode simulates human search behavior by retrieving entire web pages, aiming to provide the LLM with more complete and coherent context.
-
-**Example Workflow**:
-1.  **User Input**: `weather in Wuhan today`
-2.  **Search Planning**: The LLM analyzes the query and generates a search plan with one or more sub-queries.
-
-    ```json
-    {
-      "query_analysis": {
-        "original_query": "What is the weather in Wuhan today?",
-        "key_entities": ["Wuhan weather today"]
-      },
-      "search_plan": {
-        "foundational_queries": [
-          {"query": "Wuhan weather forecast today", "engine": "baidu"}
-        ]
-      }
-    }
-    ```
-3.  **Web Crawling**: Executes the search plan using the specified search engines and crawls the content of the resulting web pages.
-4.  **Page-Level Retrieval**:
-    -   **Vector Similarity**: Calculates the vector similarity between the query and the full content of each web page.
-    -   **BM25 Similarity**: Calculates the BM25 score between the query and the full content of each web page.
-    -   **Weighted Ranking**: The two scores are combined to produce a final ranking.
-5.  **Content Generation**: The full content of the top-ranked web pages is passed as context to the LLM to generate the final answer.
-
-**Design Philosophy**:
-When humans search, they rarely read every single result. We typically find a solution by browsing just two or three relevant pages. Before diving deep, we skim the pages to assess their relevance and quality, spending time only on high-quality content. The traditional RAG approach (V1) often retrieves scattered and repetitive knowledge snippets from different pages, which can hinder the model's ability to form a systematic understanding. In contrast, retrieving entire web pages (V2) provides more detailed and coherent context, helping the model better understand the user's core problem.
-</details>
-
-
-## File Structure
-
-```text
-TinyAISearch/
-├─ AISearchServer.py             # FastAPI backend main entry point
-├─ requirements.txt              # Python dependency list
+```
+ViewRAG/
+├── docker/                      # Docker deployment config
+│   ├── mount                    # Container mounts   
+│   ├── docker-compose.yaml      # Service orchestration (postgres + minio + backend + frontend + nginx)
+│   └── .env.docker              # Env vars (DB, MinIO accounts)
+├── nginx.conf                   # Nginx reverse proxy config (inc. SSE no-buffering rules)
 │
-├─ frontend/                     # Frontend subproject (Vue 3 + Vite)
-│  ├─ package.json               # Frontend dependencies and npm scripts
-│  └─ src/                       # Frontend application source code
-│     ├─ components/             # Reusable UI components
-│     ├─ services/               # API service layer
-│     └─ views/                  # Page components for routing
+├── backend/                     # FastAPI Backend
+│   ├── main.py                  # App entry, route registration
+│   ├── config.yaml              # Model config (LLM / Embedding / Rerank / OCR)
+│   ├── routers/                 # API Routes
+│   │   ├── llm.py               # Chat send, RAG retrieval, stream output
+│   │   ├── documents.py         # Document processing SSE, PDF stream download
+│   │   ├── knowledge_base.py    # Knowledge Base CRUD
+│   │   └── ...
+│   ├── services/
+│   │   ├── OcrAndChunk/         # PDF Parsing & Chunking Core
+│   │   │   ├── paddle_ocr/      # PaddleX Parser (client / converter / parser)
+│   │   │   ├── chunk/           # Chunking Strategy (block_chunker / recursive_chunker)
+│   │   │   ├── image_extractor.py  # PyMuPDF Image Cropping + MinIO Upload
+│   │   │   └── factory.py       # OCR Parser Factory
+│   │   ├── document/
+│   │   │   ├── enhancement_service.py  # LLM Image Description / Table Summary
+│   │   │   └── vector_service.py       # Embedding Vectorization
+│   │   ├── chat/
+│   │   │   ├── context_builder.py  # Search Results → LLM Context + Citation IDs
+│   │   │   ├── query_rewrite.py    # Multi-turn Query Rewriting
+│   │   │   └── prompts.py          # Citation Rules System Prompts
+│   │   ├── retrieval_service.py    # Unified Vector Retrieval Entry
+│   │   ├── chat_service.py         # Message Construction (Multimodal/Text)
+│   │   └── llm_service.py          # LLM Stream Call
+│   ├── models/models.py            # ORM Models (User / Session / Document / Chunk)
+│   └── crud/                       # Database CRUD
 │
-├─ images/                       # README screenshots
-├─ logs/                         # Runtime log directory
-│
-└─ utils/                        # Backend core utility modules
-   ├─ config_manager.py          # Configuration management module
-   ├─ crawl_web.py               # Web crawler
-   ├─ database.py                # Database interaction
-   ├─ keywords_extract.py        # Keyword and search plan extraction
-   ├─ pages_retrieve.py          # V2 Page-level retrieval
-   ├─ response.py                # LLM response generation
-   ├─ retrieval.py               # V1 Traditional RAG retrieval
-   └─ search_web.py              # Search engine wrapper
+└── frontend/                    # Vue 3 Frontend
+    ├── src/views/               # Page Components
+    │   ├── ChatView.vue         # Main Chat Page
+    │   ├── KnowledgeBaseList.vue / KnowledgeBaseDetail.vue
+    │   ├── PDFViewerPage.vue    # PDF Embedded Preview (PDF.js)
+    │   └── ConfigView.vue       # Model Config Page
+    └── src/components/          # Reusable Components
+        ├── chat/                # Message Rendering (inc. Image Citation, Badges)
+        ├── DocumentUpload.vue   # Document Upload + Real-time Progress
+        └── pdf/                 # PDF Viewer Component
 ```
 
-## TODO List
-- File uploading and parsing
-- Support for image uploads
-- Optimize the memory mechanism
-- Add visualization for the model's thinking process (Currently, when using an inference model, the thinking process is not displayed, only the final answer. It is normal for the model to take some time to respond).
+## Future Plans
+- Implement AgenticRAG for intelligent retrieval
+- Support local PDF parsing, removing dependency on PaddleOCR API calls
+- Develop OCR service interface to provide OCR parsing services for Bisheng
 
-## Community & Contributions
+## Contribution
 
-We warmly welcome contributions from the community! If you have any suggestions or run into any issues, please feel free to:
+Issues and Pull Requests are welcome!
 
--   Submit an **[Issue](https://github.com/David-Lolly/TinyAISearch/issues)**
--   Create a **[Pull Request](https://github.com/David-Lolly/TinyAISearch/pulls)**
 
 
 

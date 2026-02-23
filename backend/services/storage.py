@@ -32,17 +32,19 @@ class MinIOStorage:
         minio_config = {}
         
         try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f)
-                minio_config = config.get('MinIO_Config', {})
+            if config_path.is_file():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f) or {}
+                    minio_config = config.get('MinIO_Config', {})
+            # 如果是目录或不存在，则跳过文件读取，直接使用空配置（后续会回退到环境变量）
         except Exception as e:
             logger.warning(f"无法加载config.yaml中的MinIO配置: {e}")
         
         # 优先使用环境变量，否则使用config.yaml
         # V2性能优化：显式使用127.0.0.1替代localhost，避免IPv6/IPv4解析延迟
         self.endpoint = os.getenv("MINIO_ENDPOINT", minio_config.get("ENDPOINT", "127.0.0.1:9000"))
-        self.access_key = os.getenv("MINIO_ROOT_USER", minio_config.get("ACCESS_KEY", "xll"))
-        self.secret_key = os.getenv("MINIO_ROOT_PASSWORD", minio_config.get("SECRET_KEY", "xll3419552864"))
+        self.access_key = os.getenv("MINIO_ROOT_USER", minio_config.get("ACCESS_KEY", "minioadmin"))
+        self.secret_key = os.getenv("MINIO_ROOT_PASSWORD", minio_config.get("SECRET_KEY", "minioadmin"))
         self.secure = os.getenv("MINIO_SECURE", str(minio_config.get("SECURE", False))).lower() == "true"
         
         try:
@@ -58,9 +60,9 @@ class MinIOStorage:
             raise
         
         # 存储桶名称
-        self.image_bucket = "tinyaisearch-chat-images"
-        self.doc_bucket = "tinyaisearch-documents"
-        self.thumb_bucket = "tinyaisearch-thumbnails"
+        self.image_bucket = "viewrag-chat-images"
+        self.doc_bucket = "viewrag-documents"
+        self.thumb_bucket = "viewrag-thumbnails"
         
         # 确保存储桶存在
         self._ensure_buckets()
@@ -372,6 +374,105 @@ class MinIOStorage:
             logger.error(f"获取存储统计失败: {e}")
             return {}
     
+    def minio_url_to_proxy_path(self, image_url: str) -> Optional[str]:
+        """
+        将 MinIO 图片 URL 转换为后端代理路径，供前端通过 /api/images/chat/... 访问。
+        
+        Args:
+            image_url: MinIO 图片 URL，如 http://127.0.0.1:9000/viewrag-chat-images/user/session/file.webp
+        
+        Returns:
+            代理路径，如 /api/images/chat/user/session/file.webp；无法解析时返回 None
+        """
+        try:
+            if not image_url:
+                return None
+            
+            parsed_url = urlparse(image_url)
+            path_parts = parsed_url.path.strip('/').split('/', 1)
+            
+            if len(path_parts) < 2:
+                logger.warning(f"无法解析 MinIO URL: {image_url}")
+                return None
+            
+            bucket = path_parts[0]
+            object_path = path_parts[1]
+            
+            if bucket == self.image_bucket:
+                return f"/api/images/chat/{object_path}"
+            elif bucket == self.doc_bucket:
+                return f"/api/images/{object_path}"
+            else:
+                logger.warning(f"未知的 bucket: {bucket}, URL: {image_url}")
+                return None
+        except Exception as e:
+            logger.error(f"转换 MinIO URL 为代理路径失败: {image_url}, 错误: {e}")
+            return None
+
+    def proxy_path_to_minio_url(self, proxy_path: str) -> Optional[str]:
+        """
+        将前端代理路径反向转换为 MinIO 原始 URL。
+        
+        Args:
+            proxy_path: 代理路径，如 /api/images/chat/user/session/file.webp
+        
+        Returns:
+            MinIO URL，如 http://127.0.0.1:9000/viewrag-chat-images/user/session/file.webp
+            无法解析时返回 None
+        """
+        try:
+            if not proxy_path:
+                return None
+            
+            # 已经是 MinIO URL，直接返回
+            if proxy_path.startswith('http'):
+                return proxy_path
+            
+            if proxy_path.startswith('/api/images/chat/'):
+                object_path = proxy_path[len('/api/images/chat/'):]
+                bucket = self.image_bucket
+            elif proxy_path.startswith('/api/images/'):
+                object_path = proxy_path[len('/api/images/'):]
+                bucket = self.doc_bucket
+            else:
+                logger.warning(f"无法识别的代理路径格式: {proxy_path}")
+                return None
+            
+            protocol = "https" if self.secure else "http"
+            return f"{protocol}://{self.endpoint}/{bucket}/{object_path}"
+        except Exception as e:
+            logger.error(f"代理路径转换为MinIO URL失败: {proxy_path}, 错误: {e}")
+            return None
+
+    def extract_object_path(self, url: str) -> Optional[str]:
+        """
+        从任意格式的图片URL中提取 object_path（不含bucket），用于唯一标识比较。
+        
+        支持格式：
+        - MinIO URL: http://127.0.0.1:9000/viewrag-chat-images/user/session/file.webp?签名参数
+        - 预签名URL: 同上（带查询参数）
+        - 代理路径: /api/images/chat/user/session/file.webp
+        
+        Returns:
+            object_path，如 user/session/file.webp；无法解析返回 None
+        """
+        try:
+            if not url:
+                return None
+            
+            if url.startswith('/api/images/chat/'):
+                return url[len('/api/images/chat/'):]
+            elif url.startswith('/api/images/'):
+                return url[len('/api/images/'):]
+            elif url.startswith('http'):
+                parsed_url = urlparse(url)
+                path_parts = parsed_url.path.strip('/').split('/', 1)
+                if len(path_parts) >= 2:
+                    return path_parts[1]
+            return None
+        except Exception:
+            return None
+
     def download_image_as_base64(self, image_url: str) -> Optional[str]:
         """
         从MinIO下载图片并转换为base64编码

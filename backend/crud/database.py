@@ -16,34 +16,19 @@ logger = logging.getLogger(__name__)
 
 
 def load_database_config():
-    """从config.yaml加载数据库配置"""
-    config_path = Path(__file__).parent.parent / "config.yaml"
+    """从环境变量加载数据库配置"""
+    # 完全依赖环境变量，不再读取 config.yaml
+    user = os.getenv('POSTGRES_USER', 'postgres')
+    password = os.getenv('POSTGRES_PASSWORD', 'password')
+    host = os.getenv('POSTGRES_HOST', 'localhost')
+    port = os.getenv('POSTGRES_PORT', 5432)
+    database = os.getenv('POSTGRES_DB', 'viewrag')
     
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
-        
-        db_config = config.get('Database_Config', {})
-        
-        # 优先使用环境变量，否则使用config.yaml
-        user = os.getenv('POSTGRES_USER', db_config.get('POSTGRES_USER', 'xll'))
-        password = os.getenv('POSTGRES_PASSWORD', db_config.get('POSTGRES_PASSWORD', 'xll3419552864'))
-        host = os.getenv('POSTGRES_HOST', db_config.get('POSTGRES_HOST', 'localhost'))
-        port = os.getenv('POSTGRES_PORT', db_config.get('POSTGRES_PORT', 5431))
-        database = os.getenv('POSTGRES_DB', db_config.get('POSTGRES_DB', 'tinyaisearch_dev'))
-        
-        # 构建DATABASE_URL
-        database_url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
-        
-        logger.info(f"数据库配置加载成功: {host}:{port}/{database}")
-        return database_url
-        
-    except FileNotFoundError:
-        logger.error(f"配置文件未找到: {config_path}")
-        raise RuntimeError("config.yaml 文件未找到")
-    except Exception as e:
-        logger.error(f"加载数据库配置失败: {e}")
-        raise RuntimeError(f"加载数据库配置失败: {e}")
+    # 构建DATABASE_URL
+    database_url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
+    
+    logger.info(f"数据库配置加载成功: {host}:{port}/{database}")
+    return database_url
 
 
 # 获取数据库URL
@@ -120,7 +105,27 @@ def create_session(user_id: Optional[str] = None, title: str = "New Chat") -> Op
             return None
 
 
-def add_message(session_id: str, role: str, content: str, image_url: Optional[str] = None) -> Optional[str]:
+def update_session_title(session_id: str, title: str) -> bool:
+    """
+    更新会话标题。
+    """
+    with SessionLocal() as session:
+        try:
+            chat_session = session.get(ChatSession, session_id)
+            if not chat_session:
+                logger.warning(f"会话不存在: {session_id}")
+                return False
+            chat_session.title = title
+            session.commit()
+            logger.info(f"会话标题已更新: {session_id} -> {title}")
+            return True
+        except SQLAlchemyError as exc:
+            logger.error(f"更新会话标题失败: {exc}")
+            session.rollback()
+            return False
+
+
+def add_message(session_id: str, role: str, content: str, image_url: Optional[str] = None, thinking_content: Optional[str] = None) -> Optional[str]:
     """
     向会话添加消息。
     
@@ -129,6 +134,7 @@ def add_message(session_id: str, role: str, content: str, image_url: Optional[st
         role: 角色 (user/assistant)
         content: 消息内容
         image_url: 可选，图片的MinIO URL
+        thinking_content: 可选，思考过程内容（推理模型）
     
     Returns:
         消息ID或None
@@ -139,14 +145,15 @@ def add_message(session_id: str, role: str, content: str, image_url: Optional[st
         session_id=session_id, 
         role=role, 
         content=content,
-        image_url=image_url
+        image_url=image_url,
+        thinking_content=thinking_content
     )
 
     with SessionLocal() as session:
         session.add(message)
         try:
             session.commit()
-            logger.info(f"消息已添加: role={role}, image_url={'有' if image_url else '无'}")
+            logger.info(f"消息已添加: role={role}, image_url={'有' if image_url else '无'}, thinking_content={'有' if thinking_content else '无'}")
             return message_id
         except SQLAlchemyError as exc:
             logger.error("添加消息失败: %s", exc)
@@ -156,11 +163,11 @@ def add_message(session_id: str, role: str, content: str, image_url: Optional[st
 
 def get_messages(session_id: str) -> List[dict]:
     """
-    获取指定会话的消息列表（包含message_id和image_url）。
+    获取指定会话的消息列表（包含message_id、image_url和thinking_content）。
     """
     with SessionLocal() as session:
         stmt = (
-            select(Message.message_id, Message.role, Message.content, Message.image_url, Message.timestamp)
+            select(Message.message_id, Message.role, Message.content, Message.image_url, Message.thinking_content, Message.timestamp)
             .where(Message.session_id == session_id)
             .order_by(Message.timestamp.asc())
         )
@@ -171,9 +178,10 @@ def get_messages(session_id: str) -> List[dict]:
                 "role": role,
                 "content": content,
                 "image_url": image_url,
+                "thinking_content": thinking_content,
                 "timestamp": timestamp.isoformat() if timestamp else None,
             }
-            for message_id, role, content, image_url, timestamp in results
+            for message_id, role, content, image_url, thinking_content, timestamp in results
         ]
 
 
@@ -213,6 +221,7 @@ def get_message_by_id(message_id: str) -> Optional[dict]:
             "role": message.role,
             "content": message.content,
             "image_url": message.image_url,
+            "thinking_content": message.thinking_content,
             "timestamp": message.timestamp.isoformat() if message.timestamp else None,
         }
 

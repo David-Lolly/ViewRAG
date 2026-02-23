@@ -100,6 +100,17 @@ async def test_model_connection(req: TestRequest):
     通用模型连接测试端点
     前端发送完整的模型配置进行测试
     """
+    # 特定类型 (OCR) 不需要常规的 model_name/base_url 检查
+    if req.model_type == "ocr":
+        if not req.api_url or not req.api_token:
+             raise HTTPException(status_code=400, detail="OCR配置缺失(url或token)")
+
+        return await TestConnectionService.test_ocr_connection(
+            api_url=req.api_url,
+            api_token=req.api_token
+        )
+
+    # 其他类型检查必要参数
     if not req.model_name or not req.api_key or not req.base_url:
         raise HTTPException(status_code=400, detail="缺少必要的配置参数：model_name, api_key, base_url")
     
@@ -128,8 +139,9 @@ async def test_model_connection(req: TestRequest):
             req.base_url,
             req.model_name,
         )
+    
     else:
-        raise HTTPException(status_code=400, detail=f"不支持的模型类型: {model_type}")
+        raise HTTPException(status_code=400, detail="未知的模型类型")
 
 @router.post("/api/test/llm")
 async def test_llm_connection(req: TestRequest):
@@ -161,11 +173,3 @@ async def test_rerank_connection(req: TestRequest):
         _resolve(req.model_name, rerank_cfg.get("name")),
     )
 
-@router.post("/api/test/google")
-async def test_google_connection(req: TestRequest):
-    """测试Google Search连接"""
-    # Google Search 配置暂时保持在 Basic_Config 或单独区域
-    return await TestConnectionService.test_google_connection(
-        _resolve(req.api_key, str(config.get("google_api_key", ""))),
-        _resolve(req.cse_id, str(config.get("google_cse_id", ""))),
-    )

@@ -1,7 +1,7 @@
 import api from '../services/api';
 
 // ==================== Mock 数据 ====================
-const MOCK_ENABLED = true; // 开关：true 使用 Mock，false 调用真实后端
+const MOCK_ENABLED = false; // 开关：true 使用 Mock，false 调用真实后端
 
 // Mock 知识库数据
 const mockKnowledgeBases = [
@@ -39,10 +39,10 @@ const mockDocuments = {
       kb_id: 'kb-001',
       file_name: 'CNN深度学习教程.pdf',
       document_type: 'PDF',
-      status: 'PROCESSING',
+      status: 'ENRICHING',
       created_at: '2024-11-10T09:30:00Z',
       progress: 60,
-      current_step: '处理表格和图片'
+      current_step: '内容增强'
     },
     {
       id: 'doc-003',
@@ -102,21 +102,21 @@ const mockDocuments = {
       kb_id: 'kb-002',
       file_name: '用户体验研究报告.pdf',
       document_type: 'PDF',
-      status: 'PROCESSING',
+      status: 'ENRICHING',
       created_at: '2024-11-14T09:00:00Z',
       progress: 40,
-      current_step: '分段中'
+      current_step: '内容增强'
     }
   ]
 };
 
-// 文档处理状态到进度的映射
+// 文档处理状态到进度的映射（与后端 DocumentStatus 枚举对齐）
 export const STATUS_PROGRESS_MAP = {
-  'UPLOADING': { progress: 0, step: '上传中' },
-  'PARSING': { progress: 20, step: '解析中' },
-  'CHUNKING': { progress: 40, step: '分段中' },
-  'PROCESSING': { progress: 60, step: '处理表格和图片' },
-  'EMBEDDING': { progress: 80, step: '向量化嵌入' },
+  'QUEUED': { progress: 5, step: '排队中' },
+  'PARSING': { progress: 25, step: '解析中' },
+  'CHUNKING': { progress: 50, step: '分段中' },
+  'ENRICHING': { progress: 65, step: '内容增强' },
+  'VECTORIZING': { progress: 80, step: '向量化' },
   'COMPLETED': { progress: 100, step: '完成' },
   'FAILED': { progress: 0, step: '失败' }
 };
@@ -143,9 +143,9 @@ export const getKnowledgeBases = async (userId) => {
       }
     };
   }
-  
+
   // 真实 API 调用
-  return api.get('/api/v1/kb', {
+  return api.get('/api/v1/kb/', {
     params: { user_id: userId }
   });
 };
@@ -171,8 +171,8 @@ export const createKnowledgeBase = async (userId, name, description) => {
     mockDocuments[newKb.id] = [];
     return { data: newKb };
   }
-  
-  return api.post('/api/v1/kb', {
+
+  return api.post('/api/v1/kb/', {
     user_id: userId,
     name,
     description
@@ -194,7 +194,7 @@ export const deleteKnowledgeBase = async (kbId) => {
     }
     return { data: { success: true } };
   }
-  
+
   return api.delete(`/api/v1/kb/${kbId}`);
 };
 
@@ -217,7 +217,7 @@ export const getKnowledgeBaseDetail = async (kbId) => {
       }
     };
   }
-  
+
   return api.get(`/api/v1/kb/${kbId}`);
 };
 
@@ -235,7 +235,7 @@ export const getDocuments = async (kbId) => {
       }
     };
   }
-  
+
   return api.get(`/api/v1/kb/${kbId}/documents`);
 };
 
@@ -250,28 +250,28 @@ export const uploadDocuments = async (kbId, files, onProgress) => {
   if (MOCK_ENABLED) {
     // 模拟批量上传
     const uploadedDocs = [];
-    
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       await delay(500); // 模拟上传延迟
-      
+
       const newDoc = {
         id: `doc-${Date.now()}-${i}`,
         kb_id: kbId,
         file_name: file.name,
         document_type: getDocumentType(file.name),
-        status: 'UPLOADING',
+        status: 'QUEUED',
         created_at: new Date().toISOString(),
         progress: 0,
-        current_step: '上传中'
+        current_step: '排队中'
       };
-      
+
       if (!mockDocuments[kbId]) {
         mockDocuments[kbId] = [];
       }
       mockDocuments[kbId].push(newDoc);
       uploadedDocs.push(newDoc);
-      
+
       // 回调进度
       if (onProgress) {
         onProgress({
@@ -280,20 +280,25 @@ export const uploadDocuments = async (kbId, files, onProgress) => {
           currentFile: file.name
         });
       }
-      
+
       // 模拟自动开始处理
       simulateDocumentProcessing(newDoc.id, kbId);
     }
-    
+
     return { data: { documents: uploadedDocs } };
   }
-  
+
   // 真实 API 调用
   const formData = new FormData();
   for (let i = 0; i < files.length; i++) {
     formData.append('files', files[i]);
   }
-  
+
+  // 标记所有文件为上传中
+  if (onProgress) {
+    onProgress({ type: 'start', total: files.length });
+  }
+
   return api.post(`/api/v1/kb/${kbId}/upload`, formData, {
     headers: {
       'Content-Type': 'multipart/form-data'
@@ -302,6 +307,7 @@ export const uploadDocuments = async (kbId, files, onProgress) => {
       if (onProgress) {
         const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
         onProgress({
+          type: 'progress',
           percent: percentCompleted,
           loaded: progressEvent.loaded,
           total: progressEvent.total
@@ -329,7 +335,7 @@ export const deleteDocument = async (kbId, docId) => {
     }
     return { data: { success: true } };
   }
-  
+
   return api.delete(`/api/v1/kb/${kbId}/documents/${docId}`);
 };
 
@@ -350,7 +356,7 @@ export const getDocumentStatus = async (docId) => {
     }
     throw new Error('文档不存在');
   }
-  
+
   return api.get(`/api/v1/documents/${docId}/status`);
 };
 
@@ -384,38 +390,38 @@ function simulateDocumentProcessing(docId, kbId) {
   const steps = [
     { status: 'PARSING', delay: 2000 },      // 2秒后开始解析
     { status: 'CHUNKING', delay: 3000 },     // 3秒后开始分段
-    { status: 'PROCESSING', delay: 4000 },   // 4秒后处理表格图片
-    { status: 'EMBEDDING', delay: 3000 },    // 3秒后向量化
+    { status: 'ENRICHING', delay: 4000 },    // 4秒后内容增强
+    { status: 'VECTORIZING', delay: 3000 },  // 3秒后向量化
     { status: 'COMPLETED', delay: 2000 }     // 2秒后完成
   ];
-  
+
   let currentStepIndex = 0;
-  
+
   const processNextStep = () => {
     if (currentStepIndex >= steps.length) return;
-    
+
     const step = steps[currentStepIndex];
-    
+
     setTimeout(() => {
       const docs = mockDocuments[kbId];
       if (!docs) return;
-      
+
       const doc = docs.find(d => d.id === docId);
       if (!doc) return;
-      
+
       // 更新文档状态
       doc.status = step.status;
       const statusInfo = STATUS_PROGRESS_MAP[step.status];
       doc.progress = statusInfo.progress;
       doc.current_step = statusInfo.step;
-      
+
       console.log(`[Mock] 文档 ${docId} 状态更新: ${step.status} (${statusInfo.progress}%)`);
-      
+
       currentStepIndex++;
       processNextStep();
     }, step.delay);
   };
-  
+
   processNextStep();
 }
 

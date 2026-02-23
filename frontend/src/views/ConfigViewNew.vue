@@ -6,6 +6,45 @@
         <p class="text-gray-500 mt-2">请按步骤完成所有模型配置，所有测试通过后才能保存</p>
       </div>
 
+      <!-- 快速设置区域 -->
+      <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-6 mb-8">
+        <h3 class="text-lg font-medium text-indigo-900 mb-4 flex items-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd" />
+          </svg>
+          快速设置 (推荐)
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">选择服务提供商</label>
+            <select v-model="quickSetup.provider" class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-2 border">
+              <option value="">请选择...</option>
+              <option v-for="(preset, key) in PROVIDER_PRESETS" :key="key" :value="key">
+                {{ preset.name }}
+              </option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">API Key (应用于所有模型)</label>
+            <input type="password" v-model="quickSetup.apiKey" placeholder="sk-..." class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-2 border">
+            <p v-if="quickSetup.provider && PROVIDER_PRESETS[quickSetup.provider]?.apiKeyUrl" class="mt-1 text-xs text-gray-500">
+              获取 API Key: <a :href="PROVIDER_PRESETS[quickSetup.provider].apiKeyUrl" target="_blank" class="text-indigo-600 hover:text-indigo-800 underline">点击前往官网</a>
+            </p>
+          </div>
+        </div>
+        <div class="mt-4 flex justify-end">
+          <button 
+            @click="applyQuickSetup" 
+            :disabled="!quickSetup.provider || !quickSetup.apiKey"
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed">
+            应用配置预设
+          </button>
+        </div>
+        <p class="mt-2 text-xs text-indigo-600">
+          * 应用预设将自动填充下方所有步骤的配置，您仍需手动点击每一步的"测试连接"以确认。
+        </p>
+      </div>
+
       <!-- 进度指示器 -->
       <div class="flex items-center justify-center space-x-2 mb-8">
         <div v-for="(step, index) in configSteps" :key="index" class="flex items-center">
@@ -19,45 +58,8 @@
         </div>
       </div>
 
-      <!-- 步骤1: 基础配置 -->
-      <ConfigSection title="步骤1: 基础配置" description="选择召回版本和质量">
-        <div class="mt-4 space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">召回版本</label>
-            <div class="space-y-2">
-              <div class="flex items-center">
-                <input id="retrieval_v2" name="retrieval_version" type="radio" value="v2" 
-                       v-model="systemConfig.Basic_Config.RETRIEVAL_VERSION" 
-                       class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300">
-                <label for="retrieval_v2" class="ml-3 block text-sm font-medium text-gray-700">
-                  V2 模式 (推荐) - 更智能的检索策略
-                </label>
-              </div>
-              <div class="flex items-center">
-                <input id="retrieval_v1" name="retrieval_version" type="radio" value="v1" 
-                       v-model="systemConfig.Basic_Config.RETRIEVAL_VERSION" 
-                       class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300">
-                <label for="retrieval_v1" class="ml-3 block text-sm font-medium text-gray-700">
-                  V1 模式 (高级) - 需要配置 Rerank 模型
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div class="mt-4">
-            <label for="retrieval_quality" class="block text-sm font-medium text-gray-700">召回质量</label>
-            <select id="retrieval_quality" v-model="systemConfig.Basic_Config.RETRIEVAL_QUALITY" 
-                    class="mt-1 block w-full bg-white border border-gray-300 rounded-md py-2 px-4 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-              <option value="high">High - 高质量</option>
-              <option value="medium">Medium - 中等质量</option>
-              <option value="low">Low - 快速响应</option>
-            </select>
-          </div>
-        </div>
-      </ConfigSection>
-
-      <!-- 步骤2: Summary Model -->
-      <ConfigSection title="步骤2: 摘要模型配置" description="用于文本摘要、表格理解等任务">
+      <!-- 步骤1: Summary Model -->
+      <ConfigSection title="步骤1: 摘要模型配置" description="用于文本摘要、表格理解等任务">
         <ModelConfig 
           v-model="systemConfig.Model_Config.LLM.summary_model"
           :testStatus="testStatus.summary"
@@ -66,8 +68,8 @@
         />
       </ConfigSection>
 
-      <!-- 步骤3: Vision Model -->
-      <ConfigSection title="步骤3: 视觉模型配置" description="用于图像理解任务">
+      <!-- 步骤2: Vision Model -->
+      <ConfigSection title="步骤2: 视觉模型配置" description="用于图像理解任务">
         <ModelConfig 
           v-model="systemConfig.Model_Config.LLM.vision_model"
           :testStatus="testStatus.vision"
@@ -76,8 +78,8 @@
         />
       </ConfigSection>
 
-      <!-- 步骤4: Chat Models (支持多个) -->
-      <ConfigSection title="步骤4: 对话模型配置" description="用户可选择的对话模型，至少配置一个">
+      <!-- 步骤3: Chat Models (支持多个) -->
+      <ConfigSection title="步骤3: 对话模型配置" description="用户可选择的对话模型，至少配置一个">
         <div class="space-y-4">
           <div v-for="(chatModel, index) in systemConfig.Model_Config.LLM.chat_model" :key="index" 
                class="border rounded-lg p-4 bg-gray-50">
@@ -108,8 +110,8 @@
         </div>
       </ConfigSection>
 
-      <!-- 步骤5: Embedding Model -->
-      <ConfigSection title="步骤5: 嵌入模型配置" description="用于文本向量化和语义搜索">
+      <!-- 步骤4: Embedding Model -->
+      <ConfigSection title="步骤4: 嵌入模型配置" description="用于文本向量化和语义搜索">
         <ModelConfig 
           v-model="systemConfig.Model_Config.Embedding.embedding_model"
           :testStatus="testStatus.embedding"
@@ -118,14 +120,100 @@
         />
       </ConfigSection>
 
-      <!-- 步骤6: Rerank Model (始终必需) -->
-      <ConfigSection title="步骤6: 重排序模型配置" description="用于提升检索精度（必需配置）">
+      <!-- 步骤5: Rerank Model (始终必需) -->
+      <ConfigSection title="步骤5: 重排序模型配置" description="用于提升检索精度（必需配置）">
         <ModelConfig 
           v-model="systemConfig.Model_Config.Rerank.rerank_model"
           :testStatus="testStatus.rerank"
           modelType="rerank"
           @test="testModel('rerank', systemConfig.Model_Config.Rerank.rerank_model)"
         />
+      </ConfigSection>
+
+      <!-- 步骤6: OCR Config -->
+      <ConfigSection title="步骤6: OCR 服务配置" description="用于文档解析和图片文字识别 (PaddleOCR)">
+        <div class="space-y-4">
+          <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm text-yellow-700">
+                  请前往 <a href="https://aistudio.baidu.com/paddleocr" target="_blank" class="font-medium underline hover:text-yellow-800">PaddleOCR 官网</a> 获取 API URL 和 Token。
+                </p>
+                <p class="text-sm text-yellow-700 mt-1">
+                  测试说明：测试将使用项目中的 <code>PDF\attention is all you need.pdf</code> 进行测试。由于需要解析文档，测试过程可能持续 30-60 秒，请耐心等待。
+                </p>
+              </div>
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">解析器类型</label>
+            <select v-model="systemConfig.OCR_Config.parser" 
+                    class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+              <option value="paddle_ocr">PaddleOCR</option>
+            </select>
+          </div>
+
+          <div v-if="systemConfig.OCR_Config.parser === 'paddle_ocr'" class="space-y-4 border-l-4 border-indigo-100 pl-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">API URL *</label>
+              <input 
+                type="text" 
+                v-model="systemConfig.OCR_Config.paddle_ocr.api_url"
+                placeholder="https://..."
+                class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              />
+            </div>
+             <div>
+              <label class="block text-sm font-medium text-gray-700">API Token *</label>
+              <input 
+                type="text" 
+                v-model="systemConfig.OCR_Config.paddle_ocr.api_token"
+                placeholder="..."
+                class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Timeout (秒)</label>
+              <input 
+                type="number" 
+                v-model.number="systemConfig.OCR_Config.paddle_ocr.timeout"
+                placeholder="300"
+                class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              />
+            </div>
+            
+            <!-- 测试按钮 -->
+            <div class="flex items-center space-x-4 pt-2">
+              <button 
+                @click="testOCR"
+                :disabled="testStatus.ocr.testing"
+                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none disabled:bg-indigo-400">
+                <span v-if="testStatus.ocr.testing">
+                  <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  测试连接中...
+                </span>
+                <span v-else>测试连接</span>
+              </button>
+              
+              <span v-if="testStatus.ocr.message" 
+                    :class="['text-sm', testStatus.ocr.success ? 'text-green-600' : 'text-red-600']">
+                {{ testStatus.ocr.message }}
+              </span>
+            </div>
+
+            <div v-if="testStatus.ocr.testing" class="text-xs text-gray-500 mt-1">
+              注意: OCR测试需要上传并解析PDF文件，耗时较长 (可能超过 60 秒)，请耐心等待...
+            </div>
+          </div>
+        </div>
       </ConfigSection>
 
       <!-- 配置状态总结 -->
@@ -169,12 +257,179 @@ import ModelConfig from '../components/ModelConfig.vue';
 const router = useRouter();
 const userId = ref(sessionStorage.getItem('userId') || '');
 
+// --- 快速设置相关 ---
+const PROVIDER_PRESETS = {
+  dashscope: {
+    name: '阿里云 DashScope (推荐)',
+    apiKeyUrl: 'https://bailian.console.aliyun.com/cn-beijing/?tab=model#/api-key',
+    base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    models: {
+      summary: 'qwen-flash',
+      vision: 'qwen3-vl-flash',
+      chat: [
+        { name: 'qwen-plus', type: 'text-model', description: '文本对话模型 (高速)', temperature: 0.5, is_default: true },
+        { name: 'qwen-vl-plus', type: 'multi-model', description: '多模态模型 (支持图片)', temperature: 0.5, is_default: false },
+        { name: 'qwen3-max', type: 'reason-model', description: '推理/思考模型', temperature: 0.7, is_default: false }
+      ],
+      embedding: 'text-embedding-v4',
+      rerank: 'gte-rerank-v2'
+    },
+    urls: {
+      embedding: 'https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings',
+      rerank: 'https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank'
+    }
+  },
+  siliconflow: {
+    name: 'SiliconFlow (硅基流动)',
+    apiKeyUrl: 'https://cloud.siliconflow.cn/me/account/ak',
+    base_url: 'https://api.siliconflow.cn/v1',
+    models: {
+      summary: 'Qwen/Qwen3-32B',
+      vision: 'Qwen/Qwen3-VL-30B-A3B-Instruct',
+      chat: [
+        { name: 'Qwen/Qwen3-Next-80B-A3B-Instruct', type: 'text-model', description: '文本对话模型', temperature: 0.7, is_default: true },
+        { name: 'Qwen/Qwen3-VL-235B-A22B-Instruct', type: 'multi-model', description: '多模态模型', temperature: 0.5, is_default: false },
+        { name: 'Qwen/Qwen3-Next-80B-A3B-Thinking', type: 'reason-model', description: '推理模型 (需开启思考模式)', temperature: 0.7, is_default: false }
+      ],
+      embedding: 'Qwen/Qwen3-Embedding-8B',
+      rerank: 'Qwen/Qwen3-Reranker-8B'
+    },
+    urls: {
+      embedding: 'https://api.siliconflow.cn/v1/embeddings',
+      rerank: 'https://api.siliconflow.cn/v1/rerank'
+    }
+  },
+  openai: {
+    name: 'OpenAI',
+    apiKeyUrl: 'https://platform.openai.com/api-keys',
+    base_url: 'https://api.openai.com/v1',
+    models: {
+      summary: 'gpt-4o-mini',
+      vision: 'gpt-4o',
+      chat: [
+        { name: 'gpt-4o', type: 'text-model', description: '文本对话模型', temperature: 0.7, is_default: true },
+        { name: 'gpt-4o', type: 'multi-model', description: '多模态模型', temperature: 0.7, is_default: false }
+      ],
+      embedding: 'text-embedding-3-small',
+      rerank: '' // OpenAI 无 Rerank
+    },
+    urls: {
+      embedding: 'https://api.openai.com/v1/embeddings',
+      rerank: ''
+    }
+  },
+  deepseek: {
+    name: 'DeepSeek',
+    apiKeyUrl: 'https://platform.deepseek.com/api_keys',
+    base_url: 'https://api.deepseek.com',
+    models: {
+      summary: 'deepseek-chat',
+      vision: '', 
+      chat: [
+        { name: 'deepseek-chat', type: 'text-model', description: 'DeepSeek V3', temperature: 0.7, is_default: true },
+        { name: 'deepseek-reasoner', type: 'reason-model', description: 'DeepSeek R1 (推理)', temperature: 0.7, is_default: false }
+      ],
+      embedding: '',
+      rerank: ''
+    },
+    urls: {
+      embedding: '',
+      rerank: ''
+    }
+  }
+};
+
+const quickSetup = reactive({
+  provider: '',
+  apiKey: ''
+});
+
+function applyQuickSetup() {
+  const preset = PROVIDER_PRESETS[quickSetup.provider];
+  if (!preset) return;
+
+  const key = quickSetup.apiKey;
+  const missingConfigs = [];
+
+  // 1. Summary Model
+  if (preset.models.summary) {
+    systemConfig.Model_Config.LLM.summary_model.name = preset.models.summary;
+    systemConfig.Model_Config.LLM.summary_model.base_url = preset.base_url;
+    systemConfig.Model_Config.LLM.summary_model.api_key = key;
+  } else {
+    missingConfigs.push('摘要模型');
+  }
+
+  // 2. Vision Model
+  if (preset.models.vision) {
+    systemConfig.Model_Config.LLM.vision_model.name = preset.models.vision;
+    systemConfig.Model_Config.LLM.vision_model.base_url = preset.base_url;
+    systemConfig.Model_Config.LLM.vision_model.api_key = key;
+  } else {
+    missingConfigs.push('视觉模型 (Vision)');
+  }
+
+  // 3. Chat Models (支持多个推荐配置)
+  if (preset.models.chat && Array.isArray(preset.models.chat)) {
+    // 清空现有
+    systemConfig.Model_Config.LLM.chat_model = [];
+    testStatus.chat = [];
+
+    preset.models.chat.forEach(m => {
+      systemConfig.Model_Config.LLM.chat_model.push({
+        name: m.name,
+        type: m.type,
+        base_url: preset.base_url,
+        api_key: key,
+        temperature: m.temperature,
+        description: m.description,
+        is_default: m.is_default || false
+      });
+      testStatus.chat.push({ testing: false, message: '', success: false });
+    });
+  }
+
+  // 4. Embedding
+  if (preset.models.embedding) {
+    systemConfig.Model_Config.Embedding.embedding_model.name = preset.models.embedding;
+    systemConfig.Model_Config.Embedding.embedding_model.base_url = preset.urls.embedding || preset.base_url;
+    systemConfig.Model_Config.Embedding.embedding_model.api_key = key;
+  } else {
+     missingConfigs.push('Embedding 模型');
+  }
+
+  // 5. Rerank
+  if (preset.models.rerank) {
+    systemConfig.Model_Config.Rerank.rerank_model.name = preset.models.rerank;
+    systemConfig.Model_Config.Rerank.rerank_model.base_url = preset.urls.rerank || preset.base_url;
+    systemConfig.Model_Config.Rerank.rerank_model.api_key = key;
+  } else {
+    missingConfigs.push('Rerank 重排序模型');
+  }
+  
+  let msg = `已应用配置预设: ${preset.name}。`;
+  if (missingConfigs.length > 0) {
+    msg += `\n\n注意：该厂商未提供以下服务，请手动配置其他厂商的模型：\n- ${missingConfigs.join('\n- ')}`;
+  }
+  msg += `\n\n请务必检查各项配置，并逐一点击"测试"按钮。`;
+  
+  alert(msg);
+}
+
+// --- End of 快速设置 ---
+
 // 系统配置结构
 const systemConfig = reactive({
   Basic_Config: {
-    RETRIEVAL_VERSION: 'v2',
-    RETRIEVAL_QUALITY: 'high',
     IS_ACTIVE: false
+  },
+  OCR_Config: {
+    parser: 'paddle_ocr',
+    paddle_ocr: {
+      api_url: '',
+      api_token: '',
+      timeout: 300
+    }
   },
   Model_Config: {
     LLM: {
@@ -190,7 +445,7 @@ const systemConfig = reactive({
         base_url: '',
         api_key: '',
         temperature: 0.3,
-        description: '用于图像理解任务'
+        description: '用于PDF中图像理解任务'
       },
       chat_model: [
         {
@@ -229,7 +484,8 @@ const testStatus = reactive({
   vision: { testing: false, message: '', success: false },
   chat: [{ testing: false, message: '', success: false }],
   embedding: { testing: false, message: '', success: false },
-  rerank: { testing: false, message: '', success: false }
+  rerank: { testing: false, message: '', success: false },
+  ocr: { testing: false, message: '', success: false }
 });
 
 const isSaving = ref(false);
@@ -237,12 +493,12 @@ const isSaving = ref(false);
 // 配置步骤
 const configSteps = computed(() => {
   const steps = [
-    { name: 'basic', label: '基础配置', completed: true },
     { name: 'summary', label: '摘要模型', completed: testStatus.summary.success },
     { name: 'vision', label: '视觉模型', completed: testStatus.vision.success },
     { name: 'chat', label: '对话模型', completed: testStatus.chat.every(s => s.success) },
     { name: 'embedding', label: '嵌入模型', completed: testStatus.embedding.success },
-    { name: 'rerank', label: '重排序模型', completed: testStatus.rerank.success }  // 始终必需
+    { name: 'rerank', label: '重排序模型', completed: testStatus.rerank.success },
+    { name: 'ocr', label: 'OCR服务', completed: testStatus.ocr.success }
   ];
   
   return steps;
@@ -323,6 +579,30 @@ async function testModel(type, modelConfig) {
     status.message = error.response?.data?.message || '连接测试失败';
   } finally {
     status.testing = false;
+  }
+}
+
+// 测试 OCR 连接
+async function testOCR() {
+  testStatus.ocr.testing = true;
+  testStatus.ocr.message = '';
+  
+  try {
+    const payload = {
+      model_type: 'ocr',
+      ...systemConfig.OCR_Config.paddle_ocr
+    };
+    
+    // api/test/model 端点现在需要支持 model_type='ocr'
+    const response = await api.post('/api/test/model', payload);
+    
+    testStatus.ocr.success = response.data.success;
+    testStatus.ocr.message = response.data.message;
+  } catch (error) {
+    testStatus.ocr.success = false;
+    testStatus.ocr.message = error.response?.data?.message || '连接测试失败';
+  } finally {
+    testStatus.ocr.testing = false;
   }
 }
 

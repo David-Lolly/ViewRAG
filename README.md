@@ -1,314 +1,244 @@
 
+<div align="center">
+  <img src="images/mascot.svg" width="120" alt="ViewRAG Mascot">
+  <br>
+  <h1>ViewRAG</h1>
+  
+  [ 简体中文 ] | [ English ](README_EN.md)
+</div>
 
-# TinyAISearch
-[ 简体中文 | [English](README_EN.md) ]
+**ViewRAG** 是一个专注于 **PDF 智能解析与图文并茂问答** 的 RAG (Retrieval-Augmented Generation) 系统。
 
+项目的**核心价值**在于打破传统 RAG 仅限文本的局限，借助大模型（LLM）的深度理解能力，实现对文档中**图片和表格的精准召回**。通过结合 MinIO 对象存储与精心设计的 Prompt，系统能够引导 LLM 在回复中引用图片，避免长图片 URL 带来的困扰。同时，系统将参考来源同步传回前端，实现**实时图片渲染与严格的PDF引用溯源**，有效解决大模型回答的信任问题。
 
-**TinyAISearch** 是一个轻量级的 AI 搜索项目，它实现了从 **搜索关键词分析**、**网页爬取**、**内容召回** 到 **流式回答** 的完整 RAG 流程。
+<img src="./images/QA.png" width="100%" />
 
-项目集成了多种召回策略（如相似度、BM25、多路召回等），支持灵活配置，让你能深入探索不同策略的优劣。同时，它兼容所有兼容 OpenAI API 的大模型（Qwen、DeepSeek、GLM、Ollama 等）。
+## 🌟 核心亮点
 
-前端基于 **Vue 3** 开发，界面简洁现代，支持表格，公式，代码支持多用户、多会话等功能。希望能为你带来愉快的体验！
+- **图文并茂的问答体验**：LLM 回答时可内联引用图片，前端实时渲染展示，提供如同阅读原生文档般的丰富体验。
+- **精准的引用溯源**：回答自动附带引用编号，前端展示对应的文档页码、片段与图片预览，点击即可在内嵌 PDF 中高亮定位，解决 LLM 信任问题。
+- **基于版式识别的智能分块**：摒弃破坏信息连续性的传统固定长度/递归分块。充分利用 PDF 解析结果，保留原始段落结构，标题与正文自动合并，小块智能拼接（块大小 1024），兼顾语义完整性与检索精度。
+- **图表深度理解**：针对 PDF 中的图片和表格，调用视觉大模型和文本生成模型生成结构化语义描述，将其转化为向量用于后续召回，大幅提升图表内容的检索命中率。
+- **全方位模型支持**：支持灵活的模型选择与切换，全面兼容**文本生成模型、多模态模型、深度思考模型**。
+- **极致的交互体验**：支持从任意对话节点编辑问题并重新生成；文档处理全程 SSE 实时推送进度。
 
-<img src="./images/Search.png" width="100%" />
+## 📸 界面预览
 
-## 运行效果
+| 模型选择 (支持文本/多模态/推理模型)            | 主聊天界面                                   |
+| ---------------------------------------------- | -------------------------------------------- |
+| <img src="./images/models.png" width="100%" /> | <img src="./images/home.png" width="100%" /> |
 
-### 主要功能界面
+| 引用溯源 (解决信任问题)                      | PDF高亮溯源                                       |
+| -------------------------------------------- | ------------------------------------------------- |
+| <img src="./images/cite.png" width="100%" /> | <img src="./images/highlight.png" width="100%" /> |
 
-**1. 登录界面**
+| PDF 版式识别                                  | 基于版式的智能分块 (注：前面的序号是chunk id，id相同表示属于同一chunk) |
+| --------------------------------------------- | ---------------------------------------------------------------------- |
+| <img src="./images/parse.png" width="100%" /> | <img src="./images/chunk.png" width="100%" />                          |
 
-<img src="./images/Login.png" width="80%" />
+| 深度推理 (Reasoning)                           | 视觉理解 (Vision Language)                 |
+| ---------------------------------------------- | ------------------------------------------ |
+| <img src="./images/Reason.png" width="100%" /> | <img src="./images/VL.png" width="100%" /> |
 
-**2. 应用主界面**
+| 任意节点编辑重生成                           | 知识库管理                                 |
+| -------------------------------------------- | ------------------------------------------ |
+| <img src="./images/edit.png" width="100%" /> | <img src="./images/kb.png" width="100%" /> |
 
-<img src="./images/ChatView.png" width="80%" />
+## ⚙️ 核心功能
 
+- **高质量 PDF 解析**：对接 PaddleX 版式解析 API，识别文本、标题、图片、表格、公式等版面元素，并精准提取 bbox 坐标。
+- **向量检索**：基于 pgvector 的语义向量检索，支持按会话/知识库范围精确过滤。
+- **问题重写**：结合对话历史自动补全指代词，提升多轮对话下的检索准确率。
+- **知识库管理**：支持创建永久知识库，上传多份 PDF 统一检索。
+- **会话文档**：支持在对话中临时上传 PDF，仅在当前会话内检索。
+- **多用户 / 多会话**：独立账户体系，每用户独立会话与知识库。
+- **兼容任意 LLM**：所有模型均通过 OpenAI 兼容 API 接入，支持 Qwen、DeepSeek、GLM、Ollama 等。
 
-### 核心功能演示
+## 系统架构
 
-**日常对话功能**
+```
+┌─────────────────────────────────────────────────────────┐
+│                       Nginx (8080)                       │
+│          反向代理 + SSE 无缓冲 + 大文件上传               │
+└────────────────┬──────────────────┬─────────────────────┘
+                 │                  │
+        ┌────────▼──────┐   ┌───────▼────────┐
+        │  Frontend      │   │  Backend        │
+        │  Vue3 + Vite   │   │  FastAPI        │
+        │  Nginx 静态    │   │  Python 3.10    │
+        └───────────────┘   └───────┬─────────┘
+                                    │
+              ┌─────────────────────┼──────────────────────┐
+              │                     │                       │
+     ┌────────▼────────┐  ┌─────────▼──────┐  ┌───────────▼───────┐
+     │  PostgreSQL      │  │    MinIO        │  │  PaddleX API      │
+     │  + pgvector      │  │  文件 / 图片    │  │  PDF 版式解析     │
+     │  向量 + 元数据   │  │  对象存储       │  │  (外部服务)       │
+     └─────────────────┘  └────────────────┘  └───────────────────┘
+```
 
-<img src="./images/ChatMessage.png" width="80%" />
+**PDF 处理流水线：**
 
-**页面渲染**
-- 代码块
+```
+上传 PDF
+  → PaddleX API 版式解析（识别文本/图片/表格/公式块）
+  → PyMuPDF 按 bbox 裁剪图片 → 上传 MinIO
+  → Block Chunker 分块（文本合并 / 图表独立）
+  → Vision LLM 图片描述 / LLM 表格摘要（知识库模式）
+  → Embedding 向量化 → 存入 pgvector
+```
 
-<img src="./images/code.png" width="80%" />
+**RAG 检索流水线：**
 
-- 数学公式
+```
+用户提问
+  → QueryRewrite 问题重写
+  → Embedding 向量化查询
+  → pgvector 相似度检索（按 kb_id / session_id 过滤）
+  → ContextBuilder 构建上下文 + 分配引用编号
+  → REFERENCE_SYSTEM_PROMPT 注入引用规则
+  → LLM 流式生成（SSE 推送）
+  → 前端解析 image:图片N 渲染图片 + [N] 渲染角标
+```
 
-<img src="./images/formula.png" width="80%" />
-
-**联网搜索功能**
-
-<img src="./images/Search.png" width="80%" />
-
-**回答引用溯源**
-
-<img src="./images/Reference.png" width="80%" />
-
-## 功能特性
-
-- **智能搜索规划**：分析用户查询，动态生成搜索计划。
-- **多种召回策略**：内置 **V1（传统 RAG）** 和 **V2（网页级召回）** 两种模式，支持相似度、BM25、RRF 多路召回与重排序。
-- **高度可扩展**：支持任意兼容 OpenAI API 的 **LLM**。
-- **现代化前端**：基于 **Vue 3 + Vite** 构建，界面美观，支持多用户和多会话管理。
-- **开箱即用**：提供详尽的部署指南，让你在几分钟内就能启动并运行项目。
-
-## 部署指南
+## 快速部署
 
 ### 环境要求
 
-根据您选择的部署方式，请确保您的环境满足以下要求：
+- **Docker** ≥ 20.10
+- **Docker Compose** ≥ v2.0
 
-#### Docker 部署（推荐）
-- **Docker**: 20.10.0 或更高版本
-- **Docker Compose**: v2.0 或更高版本
-
-#### 源码部署
-- **Node.js**: v18.0 或更高版本
-- **Python**: v3.10
-- **Conda**: 用于管理 Python 虚拟环境
-
-### 下载项目
-
-首先克隆项目仓库到本地：
+### 1. 克隆项目
 
 ```bash
-git clone https://github.com/David-Lolly/TinyAISearch.git
-cd TinyAISearch
+git clone https://github.com/David-Lolly/ViewRAG.git
+cd ViewRAG
 ```
 
-### 方式一：Docker 部署（推荐）
 
-Docker 部署是最简单快速的方式，无需手动配置环境依赖。
 
-#### 1. 启动服务
+### 2. 启动服务
 
 ```bash
-# 在项目根目录下执行
-docker-compose build # 第一次运行该项目需要构建镜像
-docker-compose up -d
+cd docker
+docker compose build
+docker compose up -d
 ```
 
-#### 2. 验证部署
+首次运行会自动构建镜像，等待约 3~5 分钟。
 
-```bash
-# 查看容器运行状态
-docker-compose ps
-```
-
-#### 3. 访问应用
-
-等待容器构建完成后，在浏览器中访问：
-- **应用界面**：http://localhost:8080
-
-#### 4. 停止服务
-
-```bash
-# 停止并删除容器
-docker-compose down
+### 3. 访问应用
 
 ```
+http://localhost:8080
+```
 
-### 方式二：源码部署
+### 4. 完成模型配置
 
-源码部署适合需要进行二次开发或深度定制的用户。
+首次登录后进入**配置页面**，可以选择提供商快速完成模型配置，也可以手动填写模型信息（均支持 OpenAI 兼容 API）：
 
-#### 1. 后端环境配置
+| 配置项                 | 用途                 | 推荐模型                 |
+| ---------------------- | -------------------- | ------------------------ |
+| **对话模型（文本）**   | 日常对话 / RAG 问答  | qwen-plus、deepseek-chat |
+| **对话模型（多模态）** | 含图片的对话         | qwen-vl-plus             |
+| **视觉模型**           | PDF 图片内容理解     | qwen-vl-flash            |
+| **摘要模型**           | 文档摘要 / 表格理解  | qwen-flash               |
+| **Embedding 模型**     | 文本向量化           | text-embedding-v4        |
+| **Rerank 模型**        | 检索结果重排序       | gte-rerank-v2            |
+| **PaddleX API**        | PDF 版式解析（必填） | 见下方说明               |
+
+> **PaddleX API 获取**：前往 [AI Studio](https://aistudio.baidu.com/paddleocr) 获取 PaddleX 版式解析服务，将 `api_url` 和 `api_token`，填入配置页面。
+>
+> **推荐服务商**：[阿里云百炼](https://bailian.console.aliyun.com/)（Qwen 系列）、[硅基流动](https://cloud.siliconflow.cn/)（提供免费额度）等所有兼容 OpenAI API 的提供商均可使用。
+
+配置完成后点击各项的**连接测试**按钮，全部通过后保存即可开始使用。
+
+---
+
+### 源码部署（开发者）
+
+需要提前自行部署 PostgreSQL（含 pgvector 扩展）和 MinIO，并在 `backend/.env` 中填写连接信息。
+**部署PostgreSQL和Minio
+```sh
+cd database
+docker compose up -d
+```
+
+**后端：**
 
 ```bash
-# 创建并激活 Conda 虚拟环境
-conda create -n TinyAISearch python=3.10
-conda activate TinyAISearch
-
-# 安装 Python 依赖 (建议使用国内镜像源加速)
+conda create -n viewrag python=3.10
+conda activate viewrag
+cd backend
 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+python main.py
 ```
 
-#### 2. 前端环境配置
+**前端：**
 
 ```bash
-# 进入前端目录
 cd frontend
-
-# 配置 npm 镜像源（可选，用于加速依赖下载）
-npm config set registry https://registry.npmmirror.com
-
-# 安装前端依赖
 npm install
-```
-
-#### 3. 启动服务
-
-需要同时启动前端和后端服务，建议打开两个终端窗口：
-
-**终端1：启动后端服务**
-```bash
-# 在项目根目录 TinyAISearch/ 下
-conda activate TinyAISearch
-python AISearchServer.py
-```
-> 看到 `Uvicorn running on http://localhost:5000` 表示后端启动成功
-
-**终端2：启动前端服务**
-```bash
-# 在 frontend/ 目录下
 npm run dev
 ```
-> 前端服务通常运行在 `http://localhost:5173`，请关注终端输出的实际地址
 
-#### 4. 访问应用
+## 项目结构
 
-前后端都启动成功后，在浏览器中访问前端地址即可开始使用。
-
-### 首次使用配置
-
-无论采用哪种部署方式，首次使用都需要完成以下配置步骤：
-
-#### 1. 用户注册
-
-访问应用后，首先需要注册一个账号。用户名和密码可以任意设置，系统会自动创建本地账户。
-
-#### 2. 模型配置
-
-登录成功后会自动跳转到配置页面，需要填写以下必要信息：
-
-**检索模式选择**：
-- **V2 (推荐)**：创新的网页级召回模式，更适合联网搜索场景
-- **V1**：传统的 RAG 模式，基于文本块（Chunk）进行召回
-
-**V1 召回质量**（仅在选择V1模式时需要配置）：
-- `high`：相似度检索 + Rerank 重排序
-- `higher`：多路召回（相似度 + BM25）+ RRF 融合
-
-**模型配置**：
-- **LLM 模型**：填写 API Key 和 Base URL
-- **Embedding 模型**：填写 API Key 和 Base URL  
-- **Rerank 模型**（V2模式无需配置）：填写 API Key 和 Base URL
-
-**推荐服务提供商**：
-- [硅基流动](https://cloud.siliconflow.cn/account/ak)：提供免费的模型服务额度
-- 其他兼容 OpenAI API 的服务商
-
-**搜索引擎配置**：
-- **主要搜索**：默认使用 DuckDuckGo（无需配置）
-- **备用搜索**（可选）：Google 可编程搜索 API（每天免费100次调用）
-
-#### 3. 连接测试
-
-配置完成后，点击每个配置项右侧的"连接测试"按钮，确保所有必填项的连接测试都通过后，才能保存配置并开始使用。
-
-#### 4. 开始使用
-
-配置保存成功后，即可开始您的 AI 搜索体验！
-
-### 常见问题
-
-**Q: Docker 部署时容器启动失败怎么办？**
-A: 请检查端口占用情况，确保 8080 和 5000 端口未被其他程序占用。可以使用 `docker-compose logs` 查看详细错误信息。
-
-**Q: 源码部署时依赖安装失败怎么办？**
-A: 建议使用国内镜像源，如遇到网络问题可以尝试使用 VPN 或更换镜像源。
-
-**Q: 配置完成后连接测试失败怎么办？**
-A: 请检查 API Key 是否正确，Base URL 是否可访问，网络连接是否正常。
-B: Google 连接失败，API Key和CSE是否填写正确，查看是否开启代理
-
-## 技术实现
-
-### API文档：
-请在doc目录下查看对应的API文档，了解后端各个版块的具体功能以及参数传递
-
-<details>
-<summary><strong>V1 检索模式 (点击展开)</strong></summary>
-
--   **High 质量**: 对用户问题进行 Embedding，在向量数据库中进行相似度检索，并对召回的文本块进行 Rerank 重排序。
--   **Higher 质量**:
-    1.  **多路查询生成**: 基于用户原始问题，由 LLM 生成多个衍生问题。
-    2.  **多路召回**: 同时使用 **相似度检索** 和 **BM25 稀疏检索** 对所有问题进行召回。
-    3.  **RRF 融合**: 使用 **倒数排序融合 (Reciprocal Rank Fusion)** 算法合并多路召回结果，提升查准率。
-    <br>
-    <img src="./images/multi_query_retrieval.png"  width="900" />
-</details>
-
-<details>
-<summary><strong>V2 检索模式 (点击展开)</strong></summary>
-
-V2 模式模拟了人类的搜索行为，以网页为单位进行召回，旨在为 LLM 提供更完整、更连贯的上下文信息。
-
-**工作流程示例**:
-1.  **用户输入**: `今天武汉天气`
-2.  **搜索规划**: LLM 分析查询，生成一个包含多个子查询的搜索计划。
-
-    ```json
-    {
-      "query_analysis": {
-        "original_query": "今天武汉天气如何？",
-        "key_entities": ["今天武汉天气"]
-      },
-      "search_plan": {
-        "foundational_queries": [
-          {"query": "今天武汉天气预报", "engine": "baidu"}
-        ]
-      }
-    }
-    ```
-3.  **网页爬取**: 根据搜索计划，使用指定的搜索引擎获取多个网页链接，并爬取其正文内容。
-4.  **网页级召回**:
-    -   **向量相似度**: 计算查询与每个网页全文的向量相似度。
-    -   **BM25 相似度**: 计算查询与每个网页全文的 BM25 分数。
-    -   **加权排序**: 将两种分数加权求和，得到最终排序。
-5.  **内容生成**: 将排名最高的若干个 **完整网页内容** 作为上下文，提交给 LLM 生成最终回答。
-
-**设计理念**:
-对于人类来说，每次搜索大概率不会把搜索到的网页挨个全部看一遍，因为搜索到的网页都是关于该问题的，只需要看两三个网页就足以解决问题，而且我们在详细阅读之前会粗略的浏览一下网页，看一下和我们问题的相关程度以及内容的质量，质量高的才会阅读，质量不好的大概率不会浪费时间阅读。对于V1检索模式(传统RAG)，对同一个query搜索得到的网页内容差别不是很大，召回的零散知识片段之间的描述可能大差不差，甚至有些重复，而且不利于模型比较系统的了解背景知识。召回整个网页内容的方式，这样可以提供详细具体的背景知识和解决方案，有利于模型理解用户的核心问题所在
-</details>
-
-
-## 文件结构
-
-```text
-TinyAISearch/
-├─ AISearchServer.py             #  FastAPI 后端主入口
-├─ requirements.txt              #  Python 依赖列表
+```
+ViewRAG/
+├── docker/                      # Docker 部署配置
+│   ├── mount                    # 容器挂载   
+│   ├── docker-compose.yaml      # 服务编排（postgres + minio + backend + frontend + nginx）
+│   └── .env.docker              # 环境变量（数据库、MinIO 账号）
+├── nginx.conf                   # Nginx 反向代理配置（含 SSE 无缓冲规则）
 │
-├─ frontend/                     #  前端子项目 (Vue 3 + Vite)
-│  ├─ package.json               #  前端依赖与 npm 脚本
-│  └─ src/                       #  前端业务源码
-│     ├─ components/             #  可复用 UI 组件
-│     ├─ services/               #  API 服务封装
-│     └─ views/                  #  页面级组件
+├── backend/                     # FastAPI 后端
+│   ├── main.py                  # 应用入口，路由注册
+│   ├── config.yaml              # 模型配置（LLM / Embedding / Rerank / OCR）
+│   ├── routers/                 # API 路由
+│   │   ├── llm.py               # 聊天发送、RAG 检索、流式输出
+│   │   ├── documents.py         # 文档处理 SSE、PDF 流式下载
+│   │   ├── knowledge_base.py    # 知识库 CRUD
+│   │   └── ...
+│   ├── services/
+│   │   ├── OcrAndChunk/         # PDF 解析与分块核心模块
+│   │   │   ├── paddle_ocr/      # PaddleX 解析器（client / converter / parser）
+│   │   │   ├── chunk/           # 分块策略（block_chunker / recursive_chunker）
+│   │   │   ├── image_extractor.py  # PyMuPDF 图片裁剪 + MinIO 上传
+│   │   │   └── factory.py       # OCR 解析器工厂
+│   │   ├── document/
+│   │   │   ├── enhancement_service.py  # LLM 图片描述 / 表格摘要
+│   │   │   └── vector_service.py       # Embedding 向量化
+│   │   ├── chat/
+│   │   │   ├── context_builder.py  # 检索结果 → LLM 上下文 + 引用编号
+│   │   │   ├── query_rewrite.py    # 多轮对话问题重写
+│   │   │   └── prompts.py          # 引用规则系统提示词
+│   │   ├── retrieval_service.py    # 统一向量检索入口
+│   │   ├── chat_service.py         # 消息构建（多模态/文本）
+│   │   └── llm_service.py          # LLM 流式调用
+│   ├── models/models.py            # ORM 模型（User / Session / Document / Chunk）
+│   └── crud/                       # 数据库 CRUD
 │
-├─ images/                       #  README 配图
-├─ logs/                         #  运行日志目录
-│
-└─ utils/                        #  后端核心功能模块
-   ├─ config_manager.py          #  配置管理模块
-   ├─ crawl_web.py               #  网页爬虫
-   ├─ database.py                #  数据库交互
-   ├─ keywords_extract.py        #  关键词与搜索计划提取
-   ├─ pages_retrieve.py          #  V2 网页级召回
-   ├─ response.py                #  LLM 回答生成
-   ├─ retrieval.py               #  V1 传统 RAG 召回
-   └─ search_web.py              #  搜索引擎封装
+└── frontend/                    # Vue 3 前端
+    ├── src/views/               # 页面组件
+    │   ├── ChatView.vue         # 主聊天页面
+    │   ├── KnowledgeBaseList.vue / KnowledgeBaseDetail.vue
+    │   ├── PDFViewerPage.vue    # PDF 内嵌预览（PDF.js）
+    │   └── ConfigView.vue       # 模型配置页面
+    └── src/components/          # 可复用组件
+        ├── chat/                # 消息渲染（含图片引用、角标）
+        ├── DocumentUpload.vue   # 文档上传 + 实时进度
+        └── pdf/                 # PDF 查看器组件
 ```
 
-## TODO List
-- 文件上传与解析
-- 支持图片上传
-- 优化记忆机制
-- 增加对推理模型思考过程的展示（目前使用推理模型，思考过程不会显示，只显示回答内容，若使用推理模型太久没有响应属于正常情况）
+## 后续计划
+- 实现AgenticRAG，智能化检索
+- 支持本地PDF解析，不依赖PaddleOCR API调用
+- 开发OCR服务接口，为bisheng提供OCR解析服务
 
-## 社区贡献
+## 贡献
 
-我们非常欢迎来自社区的贡献！如果你有任何建议或问题，请随时：
-
--   提交 **[Issue](https://github.com/David-Lolly/TinyAISearch/issues)**
--   创建 **[Pull Request](https://github.com/David-Lolly/TinyAISearch/pulls)**
-
-
+欢迎提交 Issue 和 Pull Request！
 
 
 

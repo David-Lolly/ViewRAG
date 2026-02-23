@@ -216,6 +216,33 @@ class KnowledgeBaseCRUD:
             return False
     
     @staticmethod
+    def delete_kb_by_id(session: Session, kb_id: str) -> bool:
+        """
+        按 ID 删除知识库（不校验 user_id）
+        
+        Args:
+            session: 数据库会话
+            kb_id: 知识库ID
+            
+        Returns:
+            是否删除成功
+        """
+        try:
+            stmt = delete(KnowledgeBase).where(KnowledgeBase.id == kb_id)
+            result = session.execute(stmt)
+            session.commit()
+            success = result.rowcount > 0
+            if success:
+                logger.info(f"知识库已删除: {kb_id}")
+            else:
+                logger.warning(f"知识库删除失败，可能不存在: {kb_id}")
+            return success
+        except SQLAlchemyError as e:
+            logger.error(f"删除知识库失败: {e}")
+            session.rollback()
+            return False
+    
+    @staticmethod
     def kb_exists(session: Session, kb_id: str, user_id: str) -> bool:
         """
         检查知识库是否存在且属于该用户

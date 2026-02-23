@@ -41,9 +41,22 @@
             多模态模型 (Text + Image)
           </label>
         </div>
+        <div class="flex items-center">
+          <input 
+            type="radio" 
+            id="type-reason"
+            value="reason-model"
+            v-model="localModel.type"
+            @change="updateModel"
+            class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
+          />
+          <label for="type-reason" class="ml-2 block text-sm text-gray-900">
+            推理模型 (Reasoning)
+          </label>
+        </div>
       </div>
       <p class="mt-1 text-xs text-gray-500">
-        多模态模型支持图片输入，测试时将使用图片进行验证
+        多模态模型支持图片输入，测试时将使用图片进行验证；推理模型支持思维链 (CoT)。
       </p>
     </div>
 

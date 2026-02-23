@@ -16,6 +16,9 @@ RUN npm run build
 
 FROM nginx:stable-alpine
 
+RUN apk add --no-cache tzdata
+ENV TZ=Asia/Shanghai
+
 COPY --from=build-stage /app/dist /usr/share/nginx/html
 
 COPY spa-nginx.conf /etc/nginx/conf.d/default.conf

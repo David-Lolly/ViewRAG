@@ -23,6 +23,12 @@ dev/
 /tests
 .kiro
 .pytest_cache
-/docker
+
 
 OcrChunk
+.hypothesis
+bug.md
+alembic.ini
+.kiroignore
+docker/mount/
+.vscode

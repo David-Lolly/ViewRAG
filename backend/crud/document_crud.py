@@ -10,11 +10,8 @@ from sqlalchemy.orm import Session
 
 from models.models import (
     Document, 
-    ContentUnit, 
-    RetrievalIndex,
     DocumentType, 
-    DocumentStatus,
-    UnitType
+    DocumentStatus
 )
 
 logger = logging.getLogger(__name__)
@@ -24,13 +21,44 @@ class DocumentCRUD:
     """文档CRUD操作类"""
     
     @staticmethod
+    def check_duplicate_by_hash(
+        session: Session,
+        file_hash: str,
+        session_id: Optional[str] = None,
+        kb_id: Optional[str] = None
+    ) -> Optional[Document]:
+        """
+        根据文件哈希检查是否存在重复文档
+        
+        Args:
+            session: 数据库会话
+            file_hash: 文件SHA256哈希
+            session_id: 会话ID（在该会话内查重）
+            kb_id: 知识库ID（在该知识库内查重）
+            
+        Returns:
+            重复的Document对象或None
+        """
+        try:
+            stmt = select(Document).where(Document.file_hash == file_hash)
+            if session_id:
+                stmt = stmt.where(Document.session_id == session_id)
+            if kb_id:
+                stmt = stmt.where(Document.kb_id == kb_id)
+            return session.execute(stmt).scalars().first()
+        except SQLAlchemyError as e:
+            logger.error(f"检查文件重复失败: {e}")
+            return None
+
+    @staticmethod
     def create_document(
         session: Session,
         file_name: str,
         file_path: str,
         document_type: DocumentType,
         session_id: Optional[str] = None,
-        kb_id: Optional[str] = None
+        kb_id: Optional[str] = None,
+        file_hash: Optional[str] = None
     ) -> Optional[Document]:
         """
         创建文档记录
@@ -42,6 +70,7 @@ class DocumentCRUD:
             document_type: 文档类型
             session_id: 会话ID（会话轨道）
             kb_id: 知识库ID（知识库轨道）
+            file_hash: 文件SHA256哈希（用于去重）
             
         Returns:
             Document对象或None
@@ -55,6 +84,7 @@ class DocumentCRUD:
                 file_name=file_name,
                 file_path=file_path,
                 document_type=document_type,
+                file_hash=file_hash,
                 status=DocumentStatus.QUEUED
             )
             session.add(document)
@@ -84,6 +114,28 @@ class DocumentCRUD:
         except SQLAlchemyError as e:
             logger.error(f"获取文档失败: {e}")
             return None
+    
+    @staticmethod
+    def get_documents_by_ids(session: Session, doc_ids: List[str]) -> Dict[str, Document]:
+        """
+        批量查询文档（用于去重后的文档信息获取）
+        
+        Args:
+            session: 数据库会话
+            doc_ids: 文档ID列表
+            
+        Returns:
+            {doc_id: Document} 字典
+        """
+        try:
+            if not doc_ids:
+                return {}
+            stmt = select(Document).where(Document.id.in_(doc_ids))
+            result = session.execute(stmt).scalars().all()
+            return {doc.id: doc for doc in result}
+        except SQLAlchemyError as e:
+            logger.error(f"批量获取文档失败: {e}")
+            return {}
     
     @staticmethod
     def get_documents_by_session_id(session: Session, session_id: str) -> List[Document]:
@@ -263,115 +315,6 @@ class DocumentCRUD:
             return False
     
     @staticmethod
-    def save_pipeline_data(
-        session: Session,
-        doc_id: str,
-        units_data: List[Dict[str, Any]],
-        summary: Optional[str] = None,
-        summary_vector: Optional[List[float]] = None
-    ) -> bool:
-        """
-        批量保存处理流水线产生的数据（核心事务性操作）
-        
-        Args:
-            session: 数据库会话
-            doc_id: 文档ID
-            units_data: 内容单元数据列表，每个元素包含：
-                {
-                    'unit_type': UnitType,
-                    'content': str,
-                    'summary': Optional[str],
-                    'metadata': Optional[dict],
-                    'parent_id': Optional[str],
-                    'retrieval_text': str,
-                    'text_vector': List[float]
-                }
-            summary: 文档级摘要（KB轨道）
-            summary_vector: 文档摘要向量（KB轨道）
-            
-        Returns:
-            是否保存成功
-        """
-        try:
-            # 1. 获取文档信息
-            document = session.get(Document, doc_id)
-            if not document:
-                logger.error(f"文档不存在: {doc_id}")
-                return False
-            
-            # 2. 更新文档摘要（如果提供）
-            if summary:
-                document.summary = summary
-            if summary_vector:
-                document.summary_vector = summary_vector
-            
-            # 3. 批量插入content_units和retrieval_index，确保L1/L2层级关系
-            l1_id_map: Dict[str, str] = {}
-            pending_children: List[Dict[str, Any]] = []
-            inserted_count = 0
-
-            def insert_unit(data: Dict[str, Any]) -> Optional[str]:
-                nonlocal inserted_count
-                unit_payload = dict(data)
-                temp_l1_id = unit_payload.pop('temp_l1_id', None)
-                unit_payload.pop('parent_l1_id_temp', None)
-                parent_id = unit_payload.get('parent_id')
-
-                unit_id = str(uuid.uuid4())
-                content_unit = ContentUnit(
-                    id=unit_id,
-                    doc_id=doc_id,
-                    parent_id=parent_id,
-                    unit_type=unit_payload['unit_type'],
-                    content=unit_payload.get('content'),
-                    summary=unit_payload.get('summary'),
-                    metadata=json.dumps(unit_payload.get('metadata')) if unit_payload.get('metadata') else None
-                )
-                session.add(content_unit)
-
-                retrieval_index = RetrievalIndex(
-                    unit_id=unit_id,
-                    doc_id=doc_id,
-                    session_id=document.session_id,
-                    kb_id=document.kb_id,
-                    parent_id=parent_id,
-                    retrieval_text=unit_payload['retrieval_text'],
-                    text_vector=unit_payload['text_vector']
-                )
-                session.add(retrieval_index)
-
-                if temp_l1_id:
-                    l1_id_map[temp_l1_id] = unit_id
-
-                inserted_count += 1
-                return unit_id
-
-            for unit_data in units_data:
-                if unit_data.get('parent_l1_id_temp'):
-                    pending_children.append(unit_data)
-                    continue
-                insert_unit(unit_data)
-
-            for unit_data in pending_children:
-                parent_temp_id = unit_data.get('parent_l1_id_temp')
-                parent_real_id = l1_id_map.get(parent_temp_id)
-                if not parent_real_id:
-                    logger.warning(f"跳过L2单元，未找到父节点: temp_id={parent_temp_id}")
-                    continue
-                child_payload = dict(unit_data)
-                child_payload['parent_id'] = parent_real_id
-                insert_unit(child_payload)
-            
-            session.commit()
-            logger.info(f"流水线数据保存成功: {doc_id}, 单元数: {inserted_count}")
-            return True
-            
-        except SQLAlchemyError as e:
-            logger.error(f"保存流水线数据失败: {e}")
-            session.rollback()
-            return False
-    
-    @staticmethod
     def get_document_owners(session: Session, doc_ids: List[str]) -> Dict[str, str]:
         """
         获取文档的归属类型（用于RAG引擎路由）
@@ -399,69 +342,114 @@ class DocumentCRUD:
             return {}
     
     @staticmethod
-    def search_session_flat(
+    def update_document_summary(session: Session, doc_id: str, summary: str) -> bool:
+        """更新文档摘要"""
+        try:
+            stmt = (
+                update(Document)
+                .where(Document.id == doc_id)
+                .values(summary=summary)
+            )
+            result = session.execute(stmt)
+            session.commit()
+            success = result.rowcount > 0
+            if success:
+                logger.info(f"文档摘要已更新: {doc_id}, 长度={len(summary)}")
+            return success
+        except SQLAlchemyError as e:
+            logger.error(f"更新文档摘要失败: {e}")
+            session.rollback()
+            return False
+
+    @staticmethod
+    def bind_documents_to_message(
         session: Session,
-        session_id: str,
         doc_ids: List[str],
-        query_vector: List[float],
-        top_k: int = 5
-    ) -> List[Dict[str, Any]]:
+        message_id: str,
+        session_id: str
+    ) -> bool:
         """
-        会话轨道：单阶段扁平化检索
+        将文档绑定到消息（用户发送消息时调用）
+        
+        Args:
+            session: 数据库会话
+            doc_ids: 文档ID列表
+            message_id: 消息ID
+            session_id: 会话ID（用于验证权限）
+            
+        Returns:
+            是否绑定成功
+        """
+        try:
+            if not doc_ids:
+                return True
+            
+            stmt = (
+                update(Document)
+                .where(and_(
+                    Document.id.in_(doc_ids),
+                    Document.session_id == session_id,
+                    Document.message_id.is_(None),  # 只绑定未绑定的文档
+                    Document.status == DocumentStatus.COMPLETED  # 只绑定已完成的文档
+                ))
+                .values(message_id=message_id)
+            )
+            result = session.execute(stmt)
+            session.commit()
+            
+            updated_count = result.rowcount
+            logger.info(f"文档绑定到消息成功: message_id={message_id}, 绑定数量={updated_count}/{len(doc_ids)}")
+            return True
+        except SQLAlchemyError as e:
+            logger.error(f"文档绑定到消息失败: {e}")
+            session.rollback()
+            return False
+
+    @staticmethod
+    def get_documents_by_message_id(session: Session, message_id: str) -> List[Document]:
+        """
+        获取消息关联的文档列表
+        
+        Args:
+            session: 数据库会话
+            message_id: 消息ID
+            
+        Returns:
+            文档列表
+        """
+        try:
+            stmt = select(Document).where(
+                Document.message_id == message_id
+            ).order_by(Document.created_at)
+            result = session.execute(stmt).scalars().all()
+            return list(result)
+        except SQLAlchemyError as e:
+            logger.error(f"获取消息关联文档失败: {e}")
+            return []
+
+    @staticmethod
+    def get_unbound_completed_documents(session: Session, session_id: str) -> List[Document]:
+        """
+        获取会话中未绑定消息的已完成文档（用于前端显示待发送的文档）
         
         Args:
             session: 数据库会话
             session_id: 会话ID
-            doc_ids: 文档ID列表
-            query_vector: 查询向量
-            top_k: 返回数量
             
         Returns:
-            检索结果列表
+            文档列表
         """
         try:
-            # 使用pgvector的向量相似度搜索
-            # 注意：这里需要使用原生SQL或特定的向量搜索语法
-            # 简化实现：先获取所有单元，再计算相似度
-            # 使用pgvector的L2距离进行向量相似度搜索
-            stmt = (
-                select(
-                    RetrievalIndex, 
-                    ContentUnit,
-                    RetrievalIndex.text_vector.l2_distance(query_vector).label('distance')
-                )
-                .join(ContentUnit, RetrievalIndex.unit_id == ContentUnit.id)
-                .where(and_(
-                    RetrievalIndex.session_id == session_id,
-                    RetrievalIndex.doc_id.in_(doc_ids)
-                ))
-                .order_by(text('distance'))  # 按距离升序排序（距离越小越相似）
-                .limit(top_k)
-            )
-            results = session.execute(stmt).all()
-            
-            # 构建输出结果
-            output = []
-            for retrieval, content, distance in results:
-                output.append({
-                    'unit_id': content.id,
-                    'content': content.content,
-                    'metadata': json.loads(content.metadata) if content.metadata else {},
-                    'distance': float(distance)  # 添加相似度分数
-                })
-            
-            logger.info(f"会话检索完成: session_id={session_id}, 结果数={len(output)}")
-            return output
-            
+            stmt = select(Document).where(and_(
+                Document.session_id == session_id,
+                Document.message_id.is_(None),
+                Document.status == DocumentStatus.COMPLETED
+            )).order_by(Document.created_at)
+            result = session.execute(stmt).scalars().all()
+            return list(result)
         except SQLAlchemyError as e:
-            logger.error(f"会话检索失败: {e}")
+            logger.error(f"获取未绑定文档失败: {e}")
             return []
-    
-    # KB轨道的多阶段检索方法
-    # search_documents_by_summary, search_l1_chunks, search_l2_splits
-    # 这些方法的实现类似，都需要使用pgvector的向量搜索
-    # 由于篇幅限制，这里暂时省略，实际开发时需要完整实现
-
 
 
 class ChunkCRUD:
@@ -472,7 +460,8 @@ class ChunkCRUD:
         session: Session,
         doc_id: str,
         kb_id: Optional[str],
-        chunks_data: List[Dict[str, Any]]
+        chunks_data: List[Dict[str, Any]],
+        session_id: Optional[str] = None
     ) -> bool:
         """
         批量保存 Chunk 数据
@@ -489,6 +478,7 @@ class ChunkCRUD:
                     'content_vector': List[float],  # 向量
                     'metadata': Optional[dict]      # 元数据
                 }
+            session_id: 会话 ID（可选，用于加速会话检索过滤）
                 
         Returns:
             是否保存成功
@@ -507,6 +497,7 @@ class ChunkCRUD:
                     id=chunk_id,
                     doc_id=doc_id,
                     kb_id=kb_id,
+                    session_id=session_id,
                     chunk_type=chunk_type,
                     content=chunk_data['content'],
                     retrieval_text=chunk_data['retrieval_text'],
@@ -518,7 +509,13 @@ class ChunkCRUD:
             session.add_all(chunks_to_insert)
             session.commit()
             
-            logger.info(f"Chunk 批量保存成功: doc_id={doc_id}, 数量={len(chunks_to_insert)}")
+            # 验证数据确实写入了
+            from sqlalchemy import text
+            count_result = session.execute(
+                text("SELECT COUNT(*) FROM chunks WHERE doc_id = :doc_id"),
+                {"doc_id": doc_id}
+            ).scalar()
+            logger.info(f"Chunk 批量保存成功: doc_id={doc_id}, 插入数量={len(chunks_to_insert)}, 验证查询数量={count_result}")
             return True
             
         except SQLAlchemyError as e:
@@ -598,6 +595,7 @@ class ChunkCRUD:
         session: Session,
         query_vector: List[float],
         kb_id: Optional[str] = None,
+        session_id: Optional[str] = None,
         doc_ids: Optional[List[str]] = None,
         top_k: int = 5
     ) -> List[Dict[str, Any]]:
@@ -608,25 +606,46 @@ class ChunkCRUD:
             session: 数据库会话
             query_vector: 查询向量
             kb_id: 知识库 ID（可选）
+            session_id: 会话 ID（可选）
             doc_ids: 文档 ID 列表（可选）
             top_k: 返回数量
             
         Returns:
-            检索结果列表，按相似度降序排列
+            检索结果列表，按相似度降序排列，包含:
+            {
+                'chunk_id': str,
+                'chunk_type': str,
+                'content': str,
+                'retrieval_text': str,
+                'metadata': dict,
+                'score': float,
+                'doc_id': str,
+                'kb_id': str | None,
+                'session_id': str | None,
+                'file_name': str,
+            }
         """
         from models.models import Chunk
         
         try:
-            # 构建查询
+            # 安全兜底：未提供任何过滤条件时返回空结果
+            if not kb_id and not session_id and not doc_ids:
+                logger.warning("search_chunks 未提供任何过滤条件，返回空结果")
+                return []
+            
+            # 构建查询，JOIN documents 表获取 file_name
             stmt = select(
                 Chunk,
+                Document.file_name,
                 Chunk.content_vector.l2_distance(query_vector).label('distance')
-            )
+            ).join(Document, Chunk.doc_id == Document.id)
             
             # 添加过滤条件
             conditions = []
             if kb_id:
                 conditions.append(Chunk.kb_id == kb_id)
+            if session_id:
+                conditions.append(Chunk.session_id == session_id)
             if doc_ids:
                 conditions.append(Chunk.doc_id.in_(doc_ids))
             
@@ -640,23 +659,58 @@ class ChunkCRUD:
             
             # 构建输出结果
             output = []
-            for chunk, distance in results:
+            for chunk, file_name, distance in results:
                 # 将 L2 距离转换为相似度分数（距离越小，相似度越高）
-                # 使用 1 / (1 + distance) 转换
                 similarity = 1.0 / (1.0 + float(distance))
+                
+                content = chunk.content
                 
                 output.append({
                     'chunk_id': chunk.id,
                     'chunk_type': chunk.chunk_type.value,
-                    'content': chunk.content,
+                    'content': content,
                     'retrieval_text': chunk.retrieval_text,
                     'metadata': json.loads(chunk.chunk_metadata) if chunk.chunk_metadata else {},
-                    'score': similarity
+                    'score': similarity,
+                    'doc_id': chunk.doc_id,
+                    'kb_id': chunk.kb_id,
+                    'session_id': chunk.session_id,
+                    'file_name': file_name,
                 })
             
-            logger.info(f"Chunk 检索完成: kb_id={kb_id}, doc_ids={doc_ids}, 结果数={len(output)}")
+            logger.info(f"Chunk 检索完成: kb_id={kb_id}, session_id={session_id}, doc_ids={doc_ids}, 结果数={len(output)}")
             return output
             
         except SQLAlchemyError as e:
             logger.error(f"Chunk 检索失败: {e}")
             return []
+    
+    @staticmethod
+    def _to_image_url(content: str) -> str:
+        """
+        将 MinIO 相对路径转换为完整可访问 URL
+        
+        如果 content 已经是完整 URL（以 http:// 或 https:// 开头），则直接返回。
+        否则拼接 MinIO 文档桶的基础 URL。
+        
+        Args:
+            content: 图片内容路径（可能是相对路径或完整 URL）
+            
+        Returns:
+            完整的可访问 URL
+        """
+        if not content:
+            return content
+        if content.startswith('http://') or content.startswith('https://'):
+            return content
+        
+        # 使用 MinIOStorage 单例获取完整 URL
+        try:
+            from services.storage import minio_storage
+            if minio_storage:
+                return minio_storage.get_file_url(minio_storage.doc_bucket, content)
+        except Exception:
+            pass
+        
+        # 兜底：拼接默认路径
+        return f"http://127.0.0.1:9000/viewrag-documents/{content}"

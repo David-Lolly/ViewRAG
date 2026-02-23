@@ -3,72 +3,82 @@
 from typing import Dict, Optional
 
 
+# 通用摘要系统提示词（用于 L1 文本摘要和文档摘要）
+SUMMARY_SYSTEM_PROMPT = """你是一个精准的文章总结专家。你的任务是提取并总结用户提供的文章或片段的核心内容。
+## 核心要求
+- 总结结果长度为100-200个字，根据内容复杂度灵活调整
+- 完全基于提供的文章内容生成总结，不添加任何未在文章中出现的信息
+- 确保总结包含文章的关键信息点和主要结论
+- 即使文章内容较复杂或专业，也必须尝试提取核心要点进行总结
+- 直接输出总结结果，不包含任何引言、前缀或解释
+## 格式与风格
+- 使用客观、中立的第三人称陈述语气
+- 使用清晰简洁的中文表达
+- 保持逻辑连贯性，确保句与句之间有合理过渡
+- 避免重复使用相同的表达方式或句式结构
+## 注意事项
+- 绝对不输出"无法生成"、"无法总结"、"内容不足"等拒绝回应的词语
+- 对于任何文本都尽最大努力提取重点并总结，无论长度或复杂度"""
+
+
 PROMPTS: Dict[str, str] = {
-    "image_prompt": """You are a professional analyst tasked with analyzing images for a knowledge base.
+    "image_prompt": """你是一名专业的图像分析师，负责为知识库分析图片内容。
 
-        **FIRST**, determine if this image contains meaningful information for knowledge retrieval:
+        **首先**，判断该图片是否包含对知识检索有意义的信息：
         
-        **SKIP these types of images** (respond with "[SKIP] reason"):
-        - Portrait photos (headshots, author photos, speaker photos)
-        - Decorative images (backgrounds, dividers, logos, icons)
-        - Scenery/landscape photos without informational content
-        - Stock photos or generic illustrations
+        **跳过以下类型的图片**（回复 "[SKIP] 原因"）：
+        - 人物肖像照（头像、作者照片、演讲者照片）
+        - 装饰性图片（背景、分隔线、Logo、图标）
+        - 无信息量的风景/自然照片
+        - 素材图片或通用插图
         
-        **ANALYZE these types of images** (provide full analysis):
-        - Charts, graphs, diagrams
-        - Flowcharts, architecture diagrams
-        - Tables, data visualizations
-        - Infographics with data or processes
-        - Screenshots with meaningful content
-        - Technical illustrations
+        **分析以下类型的图片**（提供完整分析）：
+        - 图表、曲线图、示意图
+        - 流程图、架构图
+        - 表格、数据可视化
+        - 包含数据或流程的信息图
+        - 有实质内容的截图
+        - 技术插图
         
-        **If the image should be SKIPPED**, respond ONLY with:
-        [SKIP] Brief reason (e.g., "[SKIP] Portrait photo of author")
+        **如果图片应被跳过**，仅回复：
+        [SKIP] 简要原因（例如："[SKIP] 作者肖像照"）
         
-        **If the image should be ANALYZED**, provide a Chinese summary following this structure:
+        **如果图片应被分析**，请用精炼的中文输出，遵循以下结构：
         
-        Topic: A concise title that captures the main subject of the image.
-        Key Points:
-            The first major point, finding, or piece of evidence.
-            The second major point, finding, or piece of evidence.
-            ... (Continue for all significant points)
-        Conclusion: A one-sentence summary of the image's main conclusion or the key message the audience should remember.
+        主题：一句话概括图片主题。
+        要点：列出关键数据点或发现（不超过5条）。
+        结论：一句话总结核心信息。
 
-        **Instructions for analysis**:
-        - Be direct and factual.
-        - Extract all important text, numbers, and concepts.
-        - Do not comment on the image's design, layout, or aesthetics.""",
+        **分析要求**：
+        - 总字数控制在150字以内。
+        - 直接陈述事实，提取最重要的文字、数字和概念。
+        - 不要评论图片的设计、布局或美观性。
+        - 不要在输出中添加任何方括号标记，如 [END]、[ANALYZE]、[SUMMARY] 等。唯一允许的标记是跳过图片时的 [SKIP]。""",
 
-    "table_prompt": """You are a professional analyst tasked with summarizing a presentation table for a knowledge base. Your summary must be in Chinese and structured to be easily searchable and understandable.
+    "table_prompt": """你是一名专业的数据分析师，负责为知识库总结表格内容。请用精炼的中文输出。
 
-        Please analyze the provided table and generate a summary following this exact structure:
+        请分析提供的表格，按以下结构生成简要摘要：
 
-        Topic: A concise title that captures the main subject of the table.
-        Key Points:
-            The first major point, finding, or piece of evidence.
-            The second major point, finding, or piece of evidence.
-            ... (Continue for all significant points)
-        Conclusion: A one-sentence summary of the table's main conclusion or the key message the audience should remember.
+        主题：一句话概括表格主题。
+        要点：列出关键数据点或发现（不超过5条）。
+        结论：一句话总结核心信息。
 
-        Instructions:
-        - Be direct and factual.
-        - Extract all important text, numbers, and concepts.""",
+        要求：
+        - 总字数控制在200字以内。
+        - 直接陈述事实，聚焦最重要的数据。
+        - 不要在输出中添加任何方括号标记，如 [END]、[ANALYZE]、[SUMMARY] 等。""",
 
-    "slide_prompt": """You are a professional analyst tasked with summarizing a presentation slide for a knowledge base. Your summary must be in Chinese and structured to be easily searchable and understandable.
+    "slide_prompt": """你是一名专业的演示文稿分析师，负责为知识库总结幻灯片内容。请用精炼的中文输出。
 
-        Please analyze the provided slide and generate a summary following this exact structure:
+        请分析提供的幻灯片，按以下结构生成摘要：
 
-        Topic: A concise title that captures the main subject of the slide.
-        Key Points:
-            The first major point, finding, or piece of evidence.
-            The second major point, finding, or piece of evidence.
-            ... (Continue for all significant points)
-        Conclusion: A one-sentence summary of the slide's main conclusion or the key message the audience should remember.
+        主题：一句话概括幻灯片主题。
+        要点：列出关键信息点或发现（不超过5条）。
+        结论：一句话总结核心信息。
 
-        Instructions:
-        - Be direct and factual.
-        - Extract all important text, numbers, and concepts.
-        - Do not comment on the slide's design, layout, or aesthetics."""
+        要求：
+        - 直接陈述事实，提取所有重要的文字、数字和概念。
+        - 不要评论幻灯片的设计、布局或美观性。"""
 }
 
 

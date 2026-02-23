@@ -35,18 +35,6 @@ class DocumentStatus(str, enum.Enum):
     FAILED = "FAILED"           # 处理失败
 
 
-class UnitType(str, enum.Enum):
-    """内容单元类型枚举
-    
-    [DEPRECATED] 此枚举用于旧版 ContentUnit 表，当前已被 ChunkType 替代。
-    保留以备后续分层检索扩展使用。
-    """
-    TEXT_CHUNK = "TEXT_CHUNK"   # L1 文本章节
-    TEXT_SPLIT = "TEXT_SPLIT"   # L2 细粒度文本块
-    IMAGE = "IMAGE"             # 图片单元
-    TABLE = "TABLE"             # 表格单元
-
-
 class ChunkType(str, enum.Enum):
     """Chunk 类型枚举 - 简化后的统一内容块类型"""
     TEXT = "TEXT"     # 文本块
@@ -100,7 +88,8 @@ class Message(Base):
     )
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    image_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)  # 图片URL字段
+    thinking_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 思考过程内容（推理模型）
+    image_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 图片URL字段（JSON数组）
     timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     session: Mapped["ChatSession"] = relationship("ChatSession", back_populates="messages")
@@ -172,6 +161,11 @@ class Document(Base):
         String(36), ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=True, index=True
     )
     
+    # 关联消息：用户发送消息时绑定文档到该消息
+    message_id: Mapped[Optional[str]] = mapped_column(
+        String(255), ForeignKey("messages.message_id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    
     # 元数据
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     file_path: Mapped[str] = mapped_column(Text, nullable=False)  # MinIO 存储路径
@@ -179,6 +173,7 @@ class Document(Base):
     status: Mapped[DocumentStatus] = mapped_column(
         Enum(DocumentStatus), nullable=False, default=DocumentStatus.QUEUED
     )
+    file_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)  # SHA256哈希，用于文件去重
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     
@@ -189,9 +184,6 @@ class Document(Base):
     # 关系
     session: Mapped[Optional["ChatSession"]] = relationship("ChatSession", backref="documents")
     knowledge_base: Mapped[Optional["KnowledgeBase"]] = relationship("KnowledgeBase", back_populates="documents")
-    content_units: Mapped[List["ContentUnit"]] = relationship(
-        "ContentUnit", back_populates="document", cascade="all, delete-orphan"
-    )
     chunks: Mapped[List["Chunk"]] = relationship(
         "Chunk", back_populates="document", cascade="all, delete-orphan"
     )
@@ -205,61 +197,6 @@ class Document(Base):
     )
 
 
-class ContentUnit(Base):
-    """内容单元表 - 存储所有粒度的内容块
-    
-    [DEPRECATED] 当前阶段已被简化的 Chunk 表替代。
-    保留此表定义以备后续分层检索扩展使用（如需要 L1/L2 层级结构）。
-    """
-    __tablename__ = "content_units"
-    
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True)
-    doc_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    parent_id: Mapped[Optional[str]] = mapped_column(
-        String(36), ForeignKey("content_units.id", ondelete="SET NULL"), nullable=True, index=True
-    )
-    unit_type: Mapped[UnitType] = mapped_column(Enum(UnitType), nullable=False)
-    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)       # L2 原始文本 / L1 Image URL/Table Markdown原文 / L1 原始段落
-    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)       # L1 LLM生成的摘要/描述
-    meta_data: Mapped[Optional[dict]] = mapped_column(Text, nullable=True)     # JSON存储页码、标题等
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    
-    # 关系
-    document: Mapped["Document"] = relationship("Document", back_populates="content_units")
-    retrieval_index: Mapped[Optional["RetrievalIndex"]] = relationship(
-        "RetrievalIndex", back_populates="content_unit", cascade="all, delete-orphan", uselist=False
-    )
-
-
-class RetrievalIndex(Base):
-    """检索索引表 - 专为RAG检索优化的瘦表
-    
-    [DEPRECATED] 当前阶段已被简化的 Chunk 表替代，向量直接存储在 Chunk.content_vector。
-    保留此表定义以备后续分层检索扩展使用。
-    """
-    __tablename__ = "retrieval_index"
-    
-    unit_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("content_units.id", ondelete="CASCADE"), primary_key=True
-    )
-    
-    # 冗余ID，用于快速过滤
-    doc_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    session_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
-    kb_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
-    parent_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)  # NULL 表示 L1
-    
-    retrieval_text: Mapped[str] = mapped_column(Text, nullable=False)         # L1用Summary, L2用Content
-    text_vector: Mapped[Vector] = mapped_column(Vector(1024), nullable=False)
-    
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    
-    # 关系
-    content_unit: Mapped["ContentUnit"] = relationship("ContentUnit", back_populates="retrieval_index")
-
-
 class Chunk(Base):
     """统一内容块表 - 简化后的扁平化存储结构"""
     __tablename__ = "chunks"
@@ -269,6 +206,9 @@ class Chunk(Base):
         String(36), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
     )
     kb_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)  # 冗余字段，加速检索过滤
+    session_id: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, index=True
+    )  # 冗余字段，加速会话检索过滤
     
     chunk_type: Mapped[ChunkType] = mapped_column(Enum(ChunkType), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)           # 原始内容
@@ -290,11 +230,8 @@ __all__ = [
     "ChatFile",
     "DocumentType",
     "DocumentStatus", 
-    "UnitType",
     "ChunkType",
     "KnowledgeBase", 
     "Document", 
-    "ContentUnit", 
-    "RetrievalIndex",
     "Chunk"
 ]

@@ -1,0 +1,56 @@
+Basic_Config:
+  IS_ACTIVE: true
+OCR_Config:
+  parser: paddle_ocr
+  paddle_ocr:
+    api_url: https://8cfan7f9jf8bn4e0.aistudio-app.com/layout-parsing
+    api_token: 146fca2de3e2038d997c0fadcf4187a2004dc2be
+    timeout: 300
+Model_Config:
+  LLM:
+    summary_model:
+      name: qwen-flash
+      base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: sk-039cdaf2c5e34df88975be04a5d1f203
+      temperature: 0.4
+      description: 用于文本摘要、表格理解任务
+    vision_model:
+      name: qwen3-vl-flash
+      base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: sk-039cdaf2c5e34df88975be04a5d1f203
+      temperature: 0.3
+      description: 用于PDF中图像理解任务
+    chat_model:
+    - name: qwen-plus
+      base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: sk-039cdaf2c5e34df88975be04a5d1f203
+      temperature: 0.5
+      description: 文本对话模型 (高速)
+      is_default: true
+      type: text-model
+    - name: qwen-vl-plus
+      base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: sk-039cdaf2c5e34df88975be04a5d1f203
+      temperature: 0.5
+      description: 多模态模型 (支持图片)
+      is_default: false
+      type: multi-model
+    - name: qwen3-max
+      base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: sk-039cdaf2c5e34df88975be04a5d1f203
+      temperature: 0.7
+      description: 推理/思考模型
+      is_default: false
+      type: reason-model
+  Embedding:
+    embedding_model:
+      name: text-embedding-v4
+      base_url: https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings
+      api_key: sk-039cdaf2c5e34df88975be04a5d1f203
+      description: 用于文本向量化
+  Rerank:
+    rerank_model:
+      name: gte-rerank-v2
+      base_url: https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank
+      api_key: sk-039cdaf2c5e34df88975be04a5d1f203
+      description: 用于重排序

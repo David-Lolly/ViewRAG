@@ -1,5 +1,6 @@
 """统一RAG检索服务"""
 
+import asyncio
 import logging
 from typing import List, Dict, Any, Optional
 from crud.document_crud import DocumentCRUD, ChunkCRUD
@@ -20,6 +21,7 @@ class UnifiedRetrievalService:
         query: str,
         db_session,
         kb_id: Optional[str] = None,
+        session_id: Optional[str] = None,
         doc_ids: Optional[List[str]] = None,
         top_k: int = 5
     ) -> List[Dict[str, Any]]:
@@ -30,6 +32,7 @@ class UnifiedRetrievalService:
             query: 查询文本
             db_session: 数据库会话
             kb_id: 知识库 ID（可选）
+            session_id: 会话 ID（可选）
             doc_ids: 文档 ID 列表（可选）
             top_k: 返回数量
             
@@ -41,14 +44,18 @@ class UnifiedRetrievalService:
                 'content': str,
                 'retrieval_text': str,
                 'metadata': dict,
-                'score': float
+                'score': float,
+                'doc_id': str,
+                'kb_id': str | None,
+                'session_id': str | None,
+                'file_name': str,
             }
         """
         try:
-            logger.info(f"开始检索 | query={query[:50]}... | kb_id={kb_id} | doc_ids={doc_ids}")
+            logger.info(f"开始检索 | query={query[:50]}... | kb_id={kb_id} | session_id={session_id} | doc_ids={doc_ids}")
             
-            # 1. 向量化查询文本
-            query_vectors = self.vector_service.get_embeddings([query])
+            # 1. 向量化查询文本（同步 HTTP 请求，放到线程池避免阻塞事件循环）
+            query_vectors = await asyncio.to_thread(self.vector_service.get_embeddings, [query])
             query_vector = query_vectors[0] if query_vectors else None
             
             if not query_vector:
@@ -60,11 +67,21 @@ class UnifiedRetrievalService:
                 db_session,
                 query_vector,
                 kb_id=kb_id,
+                session_id=session_id,
                 doc_ids=doc_ids,
                 top_k=top_k
             )
             
             logger.info(f"检索完成 | 结果数={len(results)}")
+            for i, r in enumerate(results):
+                logger.info(
+                    f"召回Chunk[{i}]: chunk_id={r.get('chunk_id')} | type={r.get('chunk_type')} | "
+                    f"score={r.get('score', 0):.4f} | doc_id={r.get('doc_id')} | "
+                    f"file_name={r.get('file_name')} | kb_id={r.get('kb_id')} | session_id={r.get('session_id')} | "
+                    f"retrieval_text={r.get('retrieval_text', '')[:100]}... | "
+                    f"content={r.get('content', '')[:100]}... | "
+                    f"metadata={r.get('metadata')}"
+                )
             return results
             
         except Exception as e:
@@ -113,53 +130,6 @@ class UnifiedRetrievalService:
                 })
         
         return context_items
-    
-    async def get_rag_context(
-        self,
-        query: str,
-        document_ids: List[str],
-        db_session,
-        top_k: int = 5
-    ) -> str:
-        """
-        统一RAG引擎入口（简化版）
-        
-        Args:
-            query: 用户查询
-            document_ids: 文档ID列表
-            db_session: 数据库会话
-            top_k: 返回结果数量
-            
-        Returns:
-            格式化的上下文文本
-        """
-        try:
-            logger.info(f"开始RAG检索 | query={query[:50]}... | 文档数={len(document_ids)}")
-            
-            # 1. 执行检索
-            results = await self.search(
-                query=query,
-                db_session=db_session,
-                doc_ids=document_ids,
-                top_k=top_k
-            )
-            
-            if not results:
-                logger.warning("检索结果为空")
-                return ""
-            
-            # 2. 构建上下文
-            context_items = self.build_context(results)
-            
-            # 3. 格式化上下文
-            formatted_context = self._format_context(context_items, results)
-            
-            logger.info(f"RAG检索完成 | 上下文长度={len(formatted_context)}")
-            return formatted_context
-            
-        except Exception as e:
-            logger.error(f"RAG检索失败: {e}", exc_info=True)
-            return ""
     
     def _format_context(
         self, 

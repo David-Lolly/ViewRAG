@@ -4,7 +4,7 @@ import asyncio
 import logging
 from typing import Optional, List
 
-from schemas.prompts import get_prompt
+from schemas.prompts import get_prompt, SUMMARY_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -39,17 +39,18 @@ class EnhancementService:
         
         self.temperature = summary_model_cfg.get('temperature', 0.3)
         self.minio = minio_service
+        
+        # 各场景 max_tokens 硬编码限制
+        self.figure_max_tokens = 256       # 图片理解：精简描述
+        self.table_max_tokens = 350        # 表格理解：结构化摘要
+        self.doc_summary_max_tokens = 512  # 文档摘要：全局概括
 
         # Prompt templates
         self.image_prompt_template = self._require_prompt("image_prompt")
         self.table_prompt_template = self._require_prompt("table_prompt")
         self.doc_summary_prompt_template = self._get_prompt_with_fallback(
             "document_summary_prompt",
-            """请基于以下章节摘要生成一份200-300字的中文文档摘要，概括主题、关键论点和结论，并给出整体评价：\n\n{doc_info}\n{summaries_text}\n\n文档摘要："""
-        )
-        self.l1_summary_prompt_template = self._get_prompt_with_fallback(
-            "l1_text_summary_prompt",
-            "请为以下文本生成一个100-250字的浓缩摘要，精准概括其核心论点：\n\n---\n{text}\n---\n\n摘要："
+            "{doc_info}\n{summaries_text}"
         )
     
     async def enhance_figure(self, image_url: str, caption: str = "") -> str:
@@ -78,16 +79,17 @@ class EnhancementService:
                 api_key=self.vision_api_key,
                 base_url=self.vision_model_base_url,
                 model=self.vision_model_name,
-                temperature=self.temperature
+                temperature=self.temperature,
+                max_tokens=self.figure_max_tokens
             )
             
-            logger.debug(f"LLM配置 | 模型={self.vision_model_name} | 温度={self.temperature}")
+            logger.debug(f"LLM配置 | 模型={self.vision_model_name} | 温度={self.temperature} | max_tokens={self.figure_max_tokens}")
             
             # 构建消息
             prompt_parts = []
             if caption:
                 prompt_parts.append(
-                    f"The image has a caption: '{caption}'. Use this as additional context for your analysis."
+                    f"该图片的标题为：'{caption}'，请以此作为分析的补充上下文。"
                 )
             prompt_parts.append(self.image_prompt_template)
             prompt = "\n\n".join(prompt_parts)
@@ -114,6 +116,9 @@ class EnhancementService:
                 skip_reason = result_text.strip()
                 logger.info(f"图片被跳过 | 耗时={duration:.2f}s | 原因={skip_reason}")
                 return ""
+            
+            # 清理LLM可能自行添加的非预期标记
+            result_text = self._clean_llm_tags(result_text)
             
             logger.info(f"图片理解完成 | 耗时={duration:.2f}s | 描述长度={len(result_text)}")
             logger.debug(f"图片描述预览 | {result_text[:100]}...")
@@ -152,26 +157,28 @@ class EnhancementService:
                 api_key=self.summary_api_key,
                 base_url=self.summary_model_base_url,
                 model=self.summary_model_name,
-                temperature=self.temperature
+                temperature=self.temperature,
+                max_tokens=self.table_max_tokens
             )
             
-            logger.debug(f"LLM配置 | 模型={self.summary_model_name} | 温度={self.temperature}")
+            logger.debug(f"LLM配置 | 模型={self.summary_model_name} | 温度={self.temperature} | max_tokens={self.table_max_tokens}")
             
             # 构建提示词
             prompt_segments = []
             if caption:
                 prompt_segments.append(
-                    f"The table's original caption is: '{caption}'. Use this to guide your analysis."
+                    f"该表格的原始标题为：'{caption}'，请以此作为分析参考。"
                 )
             prompt_segments.append(self.table_prompt_template)
-            prompt_segments.append("Table content:")
+            prompt_segments.append("表格内容：")
             prompt_segments.append(table_markdown or "（表格内容为空）")
-            prompt_segments.append("Your analysis summary:")
+            prompt_segments.append("请输出分析摘要：")
             prompt = "\n\n".join(prompt_segments)
             
             # 调用LLM
             response = await summary_llm.ainvoke(prompt)
             result_text = response.content
+            result_text = self._clean_llm_tags(result_text)
             duration = time.time() - start_time
             
             logger.info(f"表格理解完成 | 耗时={duration:.2f}s | 摘要长度={len(result_text)}")
@@ -184,99 +191,94 @@ class EnhancementService:
             logger.warning(f"使用默认表格摘要 | {fallback}")
             return fallback
     
-    async def summarize_document(self, l1_summaries: List[str], doc_name: str = "") -> str:
+    async def summarize_document(self, blocks: list, doc_name: str = "") -> str:
         """
-        生成文档级摘要
-        
+        基于解析后的 blocks 生成文档级摘要
+
+        逻辑：
+        1. 筛选 Title/Text 类型 block，拼接文本，截取前 2048 字符
+        2. 拼接结果 ≤ 512 字符时直接作为摘要，不调用 LLM
+        3. 超过 512 字符时调用 LLM 生成摘要
+
         Args:
-            l1_summaries: L1单元的摘要列表（图、表、章节）
+            blocks: SimpleBlock 列表（需有 type 和 content 属性或对应 key）
             doc_name: 文档名称
-            
+
         Returns:
             文档摘要文本
         """
         import time
-        
+
         try:
+            # 1. 筛选文本类 block 并拼接
+            text_parts = []
+            for b in blocks:
+                btype = getattr(b, "type", None) or (
+                    b.get("type") or b.get("chunk_type") if isinstance(b, dict) else None
+                )
+                content = getattr(b, "content", None) or (b.get("content", "") if isinstance(b, dict) else "")
+                if btype in ("Title", "Text") and content:
+                    text_parts.append(content.strip())
+
+            raw_text = "\n".join(text_parts)[:2048]
+
+            if not raw_text.strip():
+                default = f"文档 {doc_name}" if doc_name else "文档内容"
+                logger.info(f"文档无有效文本 block，使用默认摘要")
+                return default
+
+            # 2. 短文本快速路径
+            if len(raw_text) <= 512:
+                logger.info(f"文档文本 ≤512 字符，直接作为摘要 | 长度={len(raw_text)}")
+                return raw_text
+
+            # 3. 调用 LLM 生成摘要
             from langchain_openai import ChatOpenAI
-            
-            logger.info(f"开始生成文档摘要 | L1单元数={len(l1_summaries)} | 文档名={doc_name[:50] if doc_name else 'N/A'}")
-            
+            from langchain_core.messages import SystemMessage, HumanMessage
+
+            logger.info(f"开始生成文档摘要 | 文本长度={len(raw_text)} | 文档名={doc_name[:50] if doc_name else 'N/A'}")
             start_time = time.time()
-            
-            # 初始化文本模型
+
             summary_llm = ChatOpenAI(
                 api_key=self.summary_api_key,
                 base_url=self.summary_model_base_url,
                 model=self.summary_model_name,
-                temperature=self.temperature
+                temperature=self.temperature,
+                max_tokens=self.doc_summary_max_tokens,
             )
-            
-            logger.debug(f"LLM配置 | 模型={self.summary_model_name} | 温度={self.temperature}")
-            
-            # 构建提示词
+
             doc_info = f"文档名称: {doc_name}\n" if doc_name else ""
-            summaries_text = "\n".join(
-                [f"{i+1}. {s}" for i, s in enumerate(l1_summaries)]
-            ) or "暂无章节摘要"
-            
-            prompt = self.doc_summary_prompt_template.format(
+            user_content = self.doc_summary_prompt_template.format(
                 doc_info=doc_info,
-                summaries_text=summaries_text
+                summaries_text=raw_text,
             )
-            
-            # 调用LLM
-            input_length = len(prompt)
-            logger.debug(f"LLM输入 | 长度={input_length}")
-            
-            response = await summary_llm.ainvoke(prompt)
+
+            messages = [
+                SystemMessage(content=SUMMARY_SYSTEM_PROMPT),
+                HumanMessage(content=user_content),
+            ]
+
+            response = await summary_llm.ainvoke(messages)
             doc_summary = response.content.strip()
             duration = time.time() - start_time
-            
+
             logger.info(f"文档摘要生成完成 | 耗时={duration:.2f}s | 长度={len(doc_summary)}")
-            logger.debug(f"文档摘要预览 | {doc_summary[:150]}...")
             return doc_summary
-            
+
         except Exception as e:
             logger.error(f"文档摘要生成失败 | 错误={str(e)}")
-            default_summary = f"文档包含{len(l1_summaries)}个主要章节和图表。"
-            logger.warning(f"使用默认文档摘要 | {default_summary}")
-            return default_summary
+            return f"文档包含 {len(blocks)} 个内容块。"
 
-    async def summarize_l1_text(self, text: str) -> str:
-        """
-        针对L1文本块生成浓缩摘要
-        """
-        import time
+    @staticmethod
+    def _clean_llm_tags(text: str) -> str:
+        """清理LLM自行添加的非预期方括号标记，如[END]、[ANALYZE]等"""
+        import re
+        # 移除独立成行或出现在文本首尾的方括号标记（保留[SKIP]由上游处理）
+        cleaned = re.sub(r'\[(?!SKIP\b)[A-Z_]+\]', '', text)
+        # 清理多余空行
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+        return cleaned.strip()
 
-        cleaned_text = (text or "").strip()
-        if not cleaned_text:
-            return ""
-
-        try:
-            from langchain_openai import ChatOpenAI
-
-            start_time = time.time()
-            summary_llm = ChatOpenAI(
-                api_key=self.summary_api_key,
-                base_url=self.summary_model_base_url,
-                model=self.summary_model_name,
-                temperature=self.temperature
-            )
-
-            prompt = self.l1_summary_prompt_template.format(text=cleaned_text[:4000])
-            response = await summary_llm.ainvoke(prompt)
-            summary_text = response.content.strip()
-            duration = time.time() - start_time
-
-            logger.info(f"L1文本摘要生成完成 | 文本长度={len(cleaned_text)} | 摘要长度={len(summary_text)} | 耗时={duration:.2f}s")
-            return summary_text
-        except Exception as e:
-            logger.error(f"L1文本摘要生成失败: {e}")
-            fallback = cleaned_text[:250]
-            logger.warning("使用默认L1摘要片段")
-            return fallback
-    
     @staticmethod
     def _require_prompt(name: str) -> str:
         prompt = get_prompt(name)
@@ -289,6 +291,9 @@ class EnhancementService:
         return get_prompt(name) or fallback
     
     async def _get_image_data_url(self, image_url: str) -> Optional[str]:
+        # 已经是 base64 data URL，无需再通过 MinIO 转换
+        if image_url.startswith("data:"):
+            return image_url
         if not self.minio:
             logger.warning("未配置MinIO服务，无法获取图片Base64")
             return None

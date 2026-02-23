@@ -8,7 +8,14 @@ from pydantic import BaseModel, Field
 # ==================== 请求模式 ====================
 
 class KnowledgeBaseCreate(BaseModel):
-    """创建知识库请求"""
+    """创建知识库请求（旧版，保留兼容）"""
+    name: str = Field(..., min_length=1, max_length=255, description="知识库名称")
+    description: Optional[str] = Field(None, description="知识库描述")
+
+
+class KnowledgeBaseCreateRequest(BaseModel):
+    """创建知识库请求（新版，user_id 在 body 中）"""
+    user_id: str = Field(..., description="用户ID")
     name: str = Field(..., min_length=1, max_length=255, description="知识库名称")
     description: Optional[str] = Field(None, description="知识库描述")
 

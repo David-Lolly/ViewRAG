@@ -25,6 +25,7 @@ class DocumentResponse(BaseModel):
     id: str
     session_id: Optional[str]
     kb_id: Optional[str]
+    message_id: Optional[str] = None  # 关联的消息ID
     file_name: str
     file_path: str
     document_type: DocumentType

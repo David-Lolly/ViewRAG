@@ -130,6 +130,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { getKnowledgeBaseDetail, getDocuments, deleteDocument } from '../api/knowledgeBase';
+import api from '../services/api';
 import DocumentList from '../components/DocumentList.vue';
 import DocumentUpload from '../components/DocumentUpload.vue';
 
@@ -148,13 +149,13 @@ const deleteConfirmDialog = ref({
   docName: ''
 });
 
-// 轮询定时器
-let pollingTimer = null;
+// SSE 连接管理
+const sseConnections = ref({});
 
 // 计算处理中的文档数量
 const processingCount = computed(() => {
   return documents.value.filter(doc => 
-    ['UPLOADING', 'PARSING', 'CHUNKING', 'PROCESSING', 'EMBEDDING'].includes(doc.status)
+    ['QUEUED', 'PARSING', 'CHUNKING', 'ENRICHING', 'VECTORIZING'].includes(doc.status)
   ).length;
 });
 
@@ -194,9 +195,76 @@ const initLoad = async () => {
 };
 
 // 上传完成回调
-const handleUploadComplete = async () => {
+const handleUploadComplete = async (uploadedDocs) => {
   await loadDocuments();
-  startPolling(); // 开始轮询
+  
+  // 为每个上传成功的文档建立 SSE 连接
+  if (Array.isArray(uploadedDocs)) {
+    uploadedDocs.forEach(doc => {
+      if (doc.success && doc.doc_id) {
+        startDocumentProcessing(doc.doc_id);
+      }
+    });
+  } else if (uploadedDocs && uploadedDocs.doc_id) {
+    // 单文件上传
+    startDocumentProcessing(uploadedDocs.doc_id);
+  }
+};
+
+// 启动文档处理（SSE 方式）
+const startDocumentProcessing = (docId) => {
+  if (sseConnections.value[docId]) {
+    console.log(`[SSE] 已存在连接 | doc_id: ${docId}`);
+    return;
+  }
+
+  const processStart = Date.now();
+  console.log(`[SSE] 开始处理文档 | doc_id: ${docId}`);
+
+  const eventSource = api.processDocumentSSE(
+    docId,
+    // 显式指定 track 为 'kb'
+    'kb',
+    // onProgress: 进度更新回调
+    (data) => {
+      const idx = documents.value.findIndex(d => d.id === docId);
+      if (idx !== -1) {
+        documents.value[idx].status = data.status;
+        documents.value[idx].progress = data.progress;
+        documents.value[idx].error_message = data.error_message || null;
+      }
+    },
+    // onComplete: 完成回调
+    (data) => {
+      const elapsed = ((Date.now() - processStart) / 1000).toFixed(2);
+      console.log(`[SSE] 处理完成 | doc_id: ${docId} | 状态: ${data.status} | 耗时: ${elapsed}s`);
+      delete sseConnections.value[docId];
+
+      // 刷新文档列表以获取最新状态
+      loadDocuments();
+    },
+    // onError: 错误回调
+    (error) => {
+      console.error(`[SSE] 连接错误 | doc_id: ${docId}`, error);
+      delete sseConnections.value[docId];
+      const idx = documents.value.findIndex(d => d.id === docId);
+      if (idx !== -1) {
+        documents.value[idx].status = 'FAILED';
+        documents.value[idx].error_message = '连接中断';
+      }
+    }
+  );
+
+  sseConnections.value[docId] = eventSource;
+};
+
+// 关闭所有 SSE 连接
+const closeAllSSEConnections = () => {
+  Object.entries(sseConnections.value).forEach(([docId, eventSource]) => {
+    console.log(`[SSE] 关闭连接 | doc_id: ${docId}`);
+    eventSource.close();
+  });
+  sseConnections.value = {};
 };
 
 // 处理删除文档
@@ -241,43 +309,21 @@ const formatDate = (dateString) => {
   });
 };
 
-// 开始轮询（当有文档处理中时）
-const startPolling = () => {
-  // 清除现有定时器
-  if (pollingTimer) {
-    clearInterval(pollingTimer);
-  }
-
-  // 如果有处理中的文档，启动轮询
-  if (processingCount.value > 0) {
-    pollingTimer = setInterval(async () => {
-      await loadDocuments();
-      
-      // 如果没有处理中的文档了，停止轮询
-      if (processingCount.value === 0) {
-        stopPolling();
-      }
-    }, 3000); // 每3秒轮询一次
-  }
-};
-
-// 停止轮询
-const stopPolling = () => {
-  if (pollingTimer) {
-    clearInterval(pollingTimer);
-    pollingTimer = null;
-  }
-};
-
 // 组件挂载
 onMounted(async () => {
   await initLoad();
-  startPolling(); // 初始检查是否需要轮询
+  
+  // 为处理中的文档建立 SSE 连接
+  documents.value.forEach(doc => {
+    if (['QUEUED', 'PARSING', 'CHUNKING', 'ENRICHING', 'VECTORIZING'].includes(doc.status)) {
+      startDocumentProcessing(doc.id);
+    }
+  });
 });
 
 // 组件卸载
 onUnmounted(() => {
-  stopPolling();
+  closeAllSSEConnections();
 });
 </script>
 

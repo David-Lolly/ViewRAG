@@ -1,4 +1,5 @@
 import logging
+import base64
 import os
 import httpx
 import requests
@@ -39,6 +40,10 @@ class TestConnectionService:
                     ]
                 }]
                 logger.info(f"测试多模态模型: {model_name}")
+            elif model_type == "reason-model":
+                 # 推理模型测试
+                messages = [{"role": "user", "content": "9.11和9.8哪个大"}]
+                logger.info(f"测试推理模型: {model_name}")
             else:
                 # 文本模型：使用纯文本测试
                 messages = [{"role": "user", "content": "Hi"}]
@@ -52,7 +57,12 @@ class TestConnectionService:
             
             # 检查响应
             if response and response.choices:
-                success_msg = "多模态模型连接成功" if model_type == "multi-model" else "文本模型连接成功"
+                msg_map = {
+                    "multi-model": "多模态模型连接成功",
+                     "reason-model": "推理模型连接成功",
+                    "text-model": "文本模型连接成功"
+                }
+                success_msg = msg_map.get(model_type, "模型连接成功")
                 return {"success": True, "message": success_msg}
             else:
                 return {"success": False, "message": "模型响应异常"}
@@ -97,11 +107,42 @@ class TestConnectionService:
 
     @staticmethod
     async def test_rerank_connection(api_key: str, base_url: str, model_name: str) -> Dict[str, Any]:
-        """测试Rerank模型连接（阿里云格式）"""
+        """测试Rerank模型连接"""
         if not base_url or not api_key or not model_name:
             return {"success": False, "message": "Rerank模型配置不完整"}
         
         try:
+            # 构造请求数据
+            query = "什么是文本排序模型"
+            documents = [
+                "文本排序模型广泛用于搜索引擎和推荐系统中",
+                "量子计算是计算科学的一个前沿领域"
+            ]
+
+            # 根据URL判断服务商格式
+            # 阿里云 DashScope 格式
+            if "dashscope.aliyuncs.com" in base_url:
+                payload = {
+                    "model": model_name,
+                    "input": {
+                        "query": query,
+                        "documents": documents
+                    },
+                    "parameters": {
+                        "return_documents": True,
+                        "top_n": 2
+                    }
+                }
+            # 硅基流动/默认 OpenAI 兼容格式
+            else:
+                payload = {
+                    "model": model_name,
+                    "query": query,
+                    "documents": documents,
+                    "return_documents": True,
+                    "top_n": 2
+                }
+
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     base_url,
@@ -109,25 +150,14 @@ class TestConnectionService:
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json"
                     },
-                    json={
-                        "model": model_name,
-                        "input": {
-                            "query": "什么是文本排序模型",
-                            "documents": [
-                                "文本排序模型广泛用于搜索引擎和推荐系统中",
-                                "量子计算是计算科学的一个前沿领域"
-                            ]
-                        },
-                        "parameters": {
-                            "return_documents": True,
-                            "top_n": 2
-                        }
-                    },
+                    json=payload,
                     timeout=30
                 )
                 response.raise_for_status()
                 data = response.json()
-                if "output" in data or "results" in data:
+                
+                # 检查响应 (兼容两种格式的响应判断)
+                if "output" in data or "results" in data or "data" in data or ("usage" in data and "id" in data):
                     return {"success": True, "message": "Rerank模型连接成功"}
                 else:
                     return {"success": False, "message": f"API响应异常: {data}"}
@@ -135,33 +165,72 @@ class TestConnectionService:
             logger.error(f"Rerank连接测试失败: {e}")
             return {"success": False, "message": f"连接失败: {str(e)}"}
 
+
+
+    # 新增 OCR 服务连接测试 (PaddleOCR)
     @staticmethod
-    async def test_google_connection(api_key: str, cse_id: str) -> Dict[str, Any]:
-        """测试Google Search连接"""
-        if not api_key or not cse_id:
-            return {"success": False, "message": "API Key和CSE ID不能为空"}
+    async def test_ocr_connection(api_url: str, api_token: str) -> Dict[str, Any]:
+        """测试OCR连接 (PaddleOCR)"""
+        if not api_url or not api_token:
+            return {"success": False, "message": "OCR配置不完整"}
+        
+        # 使用本地测试文件
+        # 路径: docs/PDF/attention is all you need.pdf
+        # 注意：这里需要确定相对路径的基准，通常是 backend/ 目录或者项目根目录
+        # 假设 backend 是工作目录，则路径为 ../docs/PDF/...
+        # 或者我们使用更稳妥的绝对路径查找方式，或者使用一个极小的内存 PDF
+        
+        # 尝试查找测试文件
+        # 当前文件: backend/services/test_connection.py
+        # backend 目录: code_root/backend
+        # PDF 位置: backend/PDF/attention is all you need.pdf
+        
+        current_dir = os.path.dirname(os.path.abspath(__file__)) # .../backend/services
+        backend_dir = os.path.dirname(current_dir) # .../backend
+        
+        # 优先查找 backend/PDF 目录 (用户指定的新位置)
+        test_file_path = os.path.join(backend_dir, "PDF", "attention is all you need.pdf")
+        
         
         try:
-            url = "https://www.googleapis.com/customsearch/v1"
-            params = {
-                "q": "daily news",
-                "key": api_key,
-                "cx": cse_id,
-                "num": 5
+            # 读取文件并进行 base64 编码
+            with open(test_file_path, "rb") as file:
+                file_bytes = file.read()
+                # 仅读取前 50KB 用于测试，避免大文件上传超时 (PaddleOCR API 可能不接受损坏的 PDF，所以最好还是传整文件)
+                # 考虑到这是测试，我们传整个文件，但设置较长的超时时间
+                file_data = base64.b64encode(file_bytes).decode("ascii")
+
+            headers = {
+                "Authorization": f"token {api_token}",
+                "Content-Type": "application/json"
             }
-            # 设置代理
-            os.environ['HTTP_PROXY'] = 'http://localhost:7890'
-            os.environ['HTTPS_PROXY'] = 'http://localhost:7890'
-            os.environ['http_proxy'] = 'http://localhost:7890'
-            os.environ['https_proxy'] = 'http://localhost:7890'
+
+            # 构造 PaddleOCR 官方要求的 payload
+            payload = {
+                "file": file_data,
+                "fileType": 0,  # 0 for PDF
+                "useDocOrientationClassify": False,
+                "useDocUnwarping": False,
+                "useChartRecognition": False,
+            }
             
-            response = requests.get(url, params=params, timeout=5)
-            if response.status_code == 200:
-                logger.info(f"Google Search连接成功。")
-                return {"success": True, "message": "Google Search连接成功"}
-            else:
-                return {"success": False, "message": "Google Search连接失败"}
+            logger.info(f"开始测试 PaddleOCR 连接: {api_url}")
+
+            async with httpx.AsyncClient(timeout=120.0) as client: # 设置120秒超时
+                response = await client.post(api_url, json=payload, headers=headers)
                 
+                if response.status_code == 200:
+                    data = response.json()
+                    # 检查 result 字段是否存在
+                    if "result" in data:
+                        return {"success": True, "message": "OCR服务连接成功 (PaddleOCR)"}
+                    else:
+                        return {"success": False, "message": f"API返回了200但格式未能解析: {str(data)[:100]}..."}
+                else:
+                    return {"success": False, "message": f"OCR服务返回错误: {response.status_code} - {response.text[:200]}"}
+
+        except httpx.TimeoutException:
+             return {"success": False, "message": "OCR服务连接超时 (超过120秒)，请检查网络或文件大小"}
         except Exception as e:
-            logger.error(f"Google Search连接测试失败: {e}")
+            logger.error(f"OCR连接测试失败: {e}")
             return {"success": False, "message": f"连接失败: {str(e)}"}

@@ -69,8 +69,8 @@
             <div v-if="shouldShowProgress(doc.status)" class="mt-3">
               <DocumentProgress
                 :status="doc.status"
-                :progress="doc.progress || 0"
-                :current-step="doc.current_step || ''"
+                :progress="doc.progress || getProgress(doc.status)"
+                :current-step="doc.current_step || getCurrentStep(doc.status)"
                 :error-message="doc.error_message || ''"
                 :show-percentage="true"
                 :show-steps="false"
@@ -86,6 +86,7 @@
 <script setup>
 import { computed } from 'vue';
 import DocumentProgress from './DocumentProgress.vue';
+import { STATUS_PROGRESS_MAP } from '../api/knowledgeBase';
 
 const props = defineProps({
   documents: {
@@ -96,9 +97,20 @@ const props = defineProps({
 
 defineEmits(['delete']);
 
+// 从 STATUS_PROGRESS_MAP 获取进度和步骤文本
+const getProgress = (status) => {
+  const info = STATUS_PROGRESS_MAP[status];
+  return info ? info.progress : 0;
+};
+
+const getCurrentStep = (status) => {
+  const info = STATUS_PROGRESS_MAP[status];
+  return info ? info.step : '';
+};
+
 // 判断是否显示进度条
 const shouldShowProgress = (status) => {
-  return ['UPLOADING', 'PARSING', 'CHUNKING', 'PROCESSING', 'EMBEDDING', 'FAILED'].includes(status);
+  return ['QUEUED', 'PARSING', 'CHUNKING', 'ENRICHING', 'VECTORIZING', 'FAILED'].includes(status);
 };
 
 // 获取文档类型图标
@@ -123,11 +135,11 @@ const getDocTypeIcon = (type) => {
 // 获取状态样式
 const getStatusStyle = (status) => {
   const styles = {
-    'UPLOADING': 'bg-blue-100 text-blue-700',
+    'QUEUED': 'bg-gray-100 text-gray-700',
     'PARSING': 'bg-blue-100 text-blue-700',
     'CHUNKING': 'bg-blue-100 text-blue-700',
-    'PROCESSING': 'bg-blue-100 text-blue-700',
-    'EMBEDDING': 'bg-blue-100 text-blue-700',
+    'ENRICHING': 'bg-blue-100 text-blue-700',
+    'VECTORIZING': 'bg-blue-100 text-blue-700',
     'COMPLETED': 'bg-green-100 text-green-700',
     'FAILED': 'bg-red-100 text-red-700'
   };
@@ -137,11 +149,11 @@ const getStatusStyle = (status) => {
 // 获取状态文本
 const getStatusText = (status) => {
   const texts = {
-    'UPLOADING': '上传中',
+    'QUEUED': '排队中',
     'PARSING': '解析中',
     'CHUNKING': '分段中',
-    'PROCESSING': '处理中',
-    'EMBEDDING': '嵌入中',
+    'ENRICHING': '内容增强',
+    'VECTORIZING': '向量化',
     'COMPLETED': '已完成',
     'FAILED': '失败'
   };

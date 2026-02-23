@@ -12,8 +12,8 @@
           <div class="flex items-center space-x-3">
             
             <div>
-              <h1 class="text-lg font-bold text-text-primary">TinyAISearch</h1>
-              <p class="text-xs text-text-secondary">智能搜索助手</p>
+              <h1 class="text-lg font-bold text-text-primary">ViewRAG</h1>
+              <p class="text-xs text-text-secondary">论文图表，一问就懂</p>
             </div>
           </div>
 
@@ -203,7 +203,7 @@
         <button
           @click="$emit('go-to-kb')"
           class="flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-2 shadow-sm"
-          style="background-color: rgb(201, 100, 66); focus:ring-color: rgba(201, 100, 66, 0.3);"
+          style="background-color: rgb(201, 100, 66);"
         >
           <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
@@ -231,6 +231,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue';
+import ViewRAGLogo from '@/assets/ViewRAG.png';
 import {
   Bars3Icon,
   ChevronDownIcon,

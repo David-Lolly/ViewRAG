@@ -267,13 +267,25 @@ const deleteConfirmDialog = ref({
 
 // 加载知识库列表
 const loadKnowledgeBases = async () => {
+  // 如果没有userId，说明可能未登录或处在访客模式，直接显示为空状态
+  if (!userId) {
+    knowledgeBases.value = [];
+    return;
+  }
+
   loading.value = true;
   try {
     const response = await getKnowledgeBases(userId);
     knowledgeBases.value = response.data.knowledge_bases || [];
   } catch (error) {
     console.error('加载知识库列表失败:', error);
-    alert('加载知识库列表失败，请稍后重试');
+    // 如果是 404 Not Found，通常意味着没有找到资源，可以视为空列表
+    // 一些API设计可能会在空结果时返回404
+    if (error.response && error.response.status === 404) {
+      knowledgeBases.value = [];
+    } else {
+      alert('加载知识库列表失败，请稍后重试');
+    }
   } finally {
     loading.value = false;
   }
@@ -286,6 +298,13 @@ const createKnowledgeBase = async () => {
     return;
   }
 
+  // 检查登录状态
+  if (!userId) {
+    alert('请先登录后再创建知识库');
+    router.push('/login');
+    return;
+  }
+
   creating.value = true;
   try {
     await createKb(userId, newKbName.value.trim(), newKbDescription.value.trim());
@@ -293,7 +312,9 @@ const createKnowledgeBase = async () => {
     await loadKnowledgeBases();
   } catch (error) {
     console.error('创建知识库失败:', error);
-    alert('创建知识库失败，请稍后重试');
+    // 提取更具体的错误信息
+    const errorMsg = error.response?.data?.detail || error.message || '未知错误';
+    alert(`创建知识库失败: ${errorMsg}`);
   } finally {
     creating.value = false;
   }
@@ -366,6 +387,7 @@ onMounted(() => {
 .line-clamp-1 {
   display: -webkit-box;
   -webkit-line-clamp: 1;
+  line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -373,6 +395,7 @@ onMounted(() => {
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

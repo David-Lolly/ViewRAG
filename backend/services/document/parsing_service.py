@@ -1,6 +1,24 @@
-"""文档解析服务"""
-# problem： 119行解析服务的压缩文档下载地址不应使用硬编码方式
+"""
+文档解析服务（已废弃）
 
+警告: 此模块已废弃，请使用新的 OCR 模块替代。
+- 新模块位置: backend/services/ocr/
+- 新处理器: backend/services/document/processors/pdf_processor.py
+
+废弃原因（需求 5）:
+- 5.1: 移除对 http://127.0.0.1:8011 外部微服务的调用
+- 5.2: 移除 pymupdf4llm 快速解析
+- 5.3: 移除 ZIP 文件提取逻辑
+- 5.4: 由新的 OCR 模块替代
+
+迁移指南:
+1. 使用 OCRParserFactory.create("paddle_ocr") 获取解析器
+2. 调用 parser.parse_bytes(file_bytes, file_name) 进行解析
+3. 使用 extract_and_upload_images() 处理图片
+4. 使用 chunk_by_block() 或 chunk_by_recursive() 进行分块
+"""
+
+import warnings
 import logging
 import httpx
 import zipfile
@@ -13,19 +31,48 @@ from utils.text_cleaner import clean_markdown, is_text_empty
 
 logger = logging.getLogger(__name__)
 
+# 发出废弃警告
+warnings.warn(
+    "ParsingService 已废弃，请使用 services.ocr 模块替代。"
+    "详见 backend/services/document/parsing_service.py 文件头部注释。",
+    DeprecationWarning,
+    stacklevel=2
+)
+
 
 class ParsingService:
-    """文档解析服务类"""
+    """
+    文档解析服务类（已废弃）
+    
+    警告: 此类已废弃，请使用新的 OCR 模块替代。
+    
+    废弃的功能:
+    - parse_document_fast(): 使用 pymupdf4llm 快速解析（需求 5.2）
+    - parse_document_quality_get_zip(): 调用外部微服务（需求 5.1）
+    - _extract_markdown_from_zip(): ZIP 文件提取（需求 5.3）
+    - process_zip_and_upload_images(): ZIP 图片处理（需求 5.3）
+    
+    替代方案:
+    - 使用 services.ocr.OCRParserFactory 获取解析器
+    - 使用 services.ocr.extract_and_upload_images() 处理图片
+    """
     
     def __init__(self):
-        """初始化解析服务"""
-        # 高质量解析微服务地址
-        self.quality_parse_url = "http://127.0.0.1:8011/parse"
-        self.timeout = 300  # 5分钟超时
+        """初始化解析服务（已废弃）"""
+        warnings.warn(
+            "ParsingService 已废弃，请使用 services.ocr 模块替代",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        # 以下配置已废弃（需求 5.1）
+        # self.quality_parse_url = "http://127.0.0.1:8011/parse"
+        # self.timeout = 300
     
     async def parse_document_fast(self, file_path: str, doc_type: str, minio_client) -> Optional[str]:
         """
-        使用pymupdf4llm进行快速本地解析
+        使用pymupdf4llm进行快速本地解析（已废弃）
+        
+        警告: 此方法已废弃（需求 5.2），请使用新的 OCR 模块替代。
         
         Args:
             file_path: MinIO文件路径
@@ -34,51 +81,23 @@ class ParsingService:
             
         Returns:
             Markdown文本或None
+            
+        Raises:
+            DeprecationWarning: 此方法已废弃
         """
-        import tempfile
-        import time
+        warnings.warn(
+            "parse_document_fast() 已废弃（需求 5.2），请使用 OCRParserFactory 替代",
+            DeprecationWarning,
+            stacklevel=2
+        )
         
-        try:
-            # 动态导入pymupdf4llm
-            import pymupdf4llm
-            
-            # 从MinIO下载文件到临时文件
-            file_bytes = await minio_client.download_file_as_bytes(file_path)
-            file_size = len(file_bytes)
-            
-            logger.info(f"开始快速解析 | 文件={file_path} | 大小={file_size}bytes")
-            
-            # 创建临时文件
-            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_path)[1]) as temp_file:
-                temp_file.write(file_bytes)
-                temp_file_path = temp_file.name
-            
-            try:
-                # 使用pymupdf4llm解析
-                start_time = time.time()
-                md_text = pymupdf4llm.to_markdown(temp_file_path)
-                duration = time.time() - start_time
-                
-                if md_text:
-                    logger.info(f"快速解析成功 | 耗时={duration:.2f}s | Markdown长度={len(md_text)}")
-                    logger.debug(f"Markdown预览 | 前500字={md_text[:500]}")
-                    return md_text
-                else:
-                    logger.warning(f"快速解析返回空内容 | 文件={file_path}")
-                    return None
-            finally:
-                # 删除临时文件
-                try:
-                    os.unlink(temp_file_path)
-                except:
-                    pass
-                
-        except ImportError:
-            logger.error(f"pymupdf4llm未安装，无法使用快速解析 | 文件={file_path}")
-            return None
-        except Exception as e:
-            logger.error(f"快速解析失败 | 文件={file_path} | 错误={str(e)}")
-            return None
+        # 以下代码已废弃，保留仅供参考
+        raise NotImplementedError(
+            "此方法已废弃。请使用新的 OCR 模块:\n"
+            "  from services.ocr import OCRParserFactory\n"
+            "  parser = OCRParserFactory.create('paddle_ocr')\n"
+            "  blocks = await parser.parse_bytes(file_bytes, file_name)"
+        )
     
     async def parse_document_quality_get_zip(
         self, 
@@ -87,7 +106,9 @@ class ParsingService:
         minio_client
     ) -> Optional[bytes]:
         """
-        调用高质量解析微服务，返回ZIP内容（知识库轨道专用）
+        调用高质量解析微服务，返回ZIP内容（已废弃）
+        
+        警告: 此方法已废弃（需求 5.1, 5.3），请使用新的 OCR 模块替代。
         
         Args:
             file_path: MinIO文件路径
@@ -96,55 +117,23 @@ class ParsingService:
             
         Returns:
             ZIP文件的二进制内容或None
+            
+        Raises:
+            DeprecationWarning: 此方法已废弃
         """
-        import time
+        warnings.warn(
+            "parse_document_quality_get_zip() 已废弃（需求 5.1, 5.3），请使用 OCRParserFactory 替代",
+            DeprecationWarning,
+            stacklevel=2
+        )
         
-        try:
-            # 从MinIO下载文件
-            file_bytes = await minio_client.download_file_as_bytes(file_path)
-            file_size = len(file_bytes)
-            
-            logger.info(f"开始高质量解析 | 文件={file_path} | 大小={file_size}bytes")
-            
-            start_time = time.time()
-            
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                # 准备文件上传
-                files = {'file': (os.path.basename(file_path), io.BytesIO(file_bytes), 'application/pdf')}
-                
-                # 调用解析服务
-                logger.debug(f"调用解析微服务 | URL={self.quality_parse_url} | 超时={self.timeout}s")
-                response = await client.post(
-                    self.quality_parse_url,
-                    files=files
-                )
-                response.raise_for_status()
-                
-                result = response.json()
-                download_url = result.get('download_url')
-                
-                if not download_url:
-                    logger.error(f"解析服务未返回下载URL | 文件={file_path}")
-                    return None
-                
-                # 下载ZIP文件
-                zip_url = f"http://127.0.0.1:8011{download_url}"
-                logger.debug(f"下载ZIP | URL={zip_url}")
-                zip_response = await client.get(zip_url)
-                zip_response.raise_for_status()
-                
-                duration = time.time() - start_time
-                zip_size = len(zip_response.content)
-                
-                logger.info(f"高质量解析成功 | 耗时={duration:.2f}s | ZIP大小={zip_size}bytes")
-                return zip_response.content
-                    
-        except httpx.TimeoutException:
-            logger.error(f"高质量解析超时 | 文件={file_path} | 超时限制={self.timeout}s")
-            return None
-        except Exception as e:
-            logger.error(f"高质量解析失败 | 文件={file_path} | 错误={str(e)}")
-            return None
+        # 以下代码已废弃，保留仅供参考
+        raise NotImplementedError(
+            "此方法已废弃。请使用新的 OCR 模块:\n"
+            "  from services.ocr import OCRParserFactory\n"
+            "  parser = OCRParserFactory.create('paddle_ocr')\n"
+            "  blocks = await parser.parse_bytes(file_bytes, file_name)"
+        )
     
     async def parse_document_quality(
         self, 
@@ -153,8 +142,9 @@ class ParsingService:
         minio_client
     ) -> Optional[str]:
         """
-        调用高质量解析微服务（简化版，仅返回Markdown）
-        用于会话轨道兜底
+        调用高质量解析微服务（已废弃）
+        
+        警告: 此方法已废弃（需求 5.1, 5.3），请使用新的 OCR 模块替代。
         
         Args:
             file_path: MinIO文件路径
@@ -163,50 +153,47 @@ class ParsingService:
             
         Returns:
             Markdown文本或None
+            
+        Raises:
+            DeprecationWarning: 此方法已废弃
         """
-        try:
-            # 获取ZIP内容
-            zip_content = await self.parse_document_quality_get_zip(file_path, doc_type, minio_client)
-            if not zip_content:
-                return None
-            
-            # 只提取Markdown，不处理图片
-            markdown_text = self._extract_markdown_from_zip(zip_content)
-            
-            if markdown_text:
-                logger.info(f"Markdown提取成功，长度: {len(markdown_text)}")
-            return markdown_text
-                    
-        except Exception as e:
-            logger.error(f"高质量解析失败: {e}")
-            return None
+        warnings.warn(
+            "parse_document_quality() 已废弃（需求 5.1, 5.3），请使用 OCRParserFactory 替代",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
+        raise NotImplementedError(
+            "此方法已废弃。请使用新的 OCR 模块:\n"
+            "  from services.ocr import OCRParserFactory\n"
+            "  parser = OCRParserFactory.create('paddle_ocr')\n"
+            "  blocks = await parser.parse_bytes(file_bytes, file_name)"
+        )
     
     def _extract_markdown_from_zip(self, zip_content: bytes) -> Optional[str]:
         """
-        从ZIP内容中提取Markdown文本
+        从ZIP内容中提取Markdown文本（已废弃）
+        
+        警告: 此方法已废弃（需求 5.3），请使用新的 OCR 模块替代。
         
         Args:
             zip_content: ZIP文件的二进制内容
             
         Returns:
             Markdown文本或None
+            
+        Raises:
+            DeprecationWarning: 此方法已废弃
         """
-        try:
-            zip_file = zipfile.ZipFile(io.BytesIO(zip_content))
-            
-            # 查找.md文件
-            for file_path in zip_file.namelist():
-                if file_path.endswith('.md'):
-                    with zip_file.open(file_path) as md_file:
-                        markdown_text = md_file.read().decode('utf-8')
-                        return markdown_text
-            
-            logger.warning("ZIP文件中未找到Markdown文件")
-            return None
-            
-        except Exception as e:
-            logger.error(f"提取Markdown失败: {e}")
-            return None
+        warnings.warn(
+            "_extract_markdown_from_zip() 已废弃（需求 5.3），ZIP 文件提取逻辑已移除",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
+        raise NotImplementedError(
+            "此方法已废弃。新的 OCR 模块直接返回 SimpleBlock 列表，不再使用 ZIP 格式。"
+        )
     
     async def parse_document(
         self, 
@@ -218,7 +205,9 @@ class ParsingService:
         doc_id: Optional[str] = None
     ) -> Optional[str]:
         """
-        统一文档解析入口（带兜底逻辑）
+        统一文档解析入口（已废弃）
+        
+        警告: 此方法已废弃（需求 5.4），请使用新的 OCR 模块替代。
         
         Args:
             file_path: MinIO文件路径
@@ -230,44 +219,22 @@ class ParsingService:
             
         Returns:
             Markdown文本或None
+            
+        Raises:
+            DeprecationWarning: 此方法已废弃
         """
-        if track == 'kb':
-            if not kb_id or not doc_id:
-                logger.error("知识库轨道解析缺少kb_id或doc_id参数")
-                return None
-            return await self._parse_kb_document(
-                file_path,
-                doc_type,
-                minio_client,
-                kb_id=kb_id,
-                doc_id=doc_id
-            )
+        warnings.warn(
+            "parse_document() 已废弃（需求 5.4），请使用 PDFProcessor 替代",
+            DeprecationWarning,
+            stacklevel=2
+        )
         
-        # 会话轨道：快速解析 + 清洗 + 兜底
-        logger.info(f"使用会话轨道解析策略 | 文件={file_path}")
-        
-        # 1. 快速解析
-        md_text = await self.parse_document_fast(file_path, doc_type, minio_client)
-        
-        if md_text:
-            # 2. 清洗文本
-            raw_length = len(md_text)
-            cleaned_text = clean_markdown(md_text)
-            cleaned_length = len(cleaned_text)
-            remove_rate = ((raw_length - cleaned_length) / raw_length * 100) if raw_length > 0 else 0
-            
-            logger.debug(f"清洗统计 | 原始长度={raw_length} | 清洗后长度={cleaned_length} | 删除率={remove_rate:.1f}%")
-            
-            # 3. 检查清洗后是否为空
-            if not is_text_empty(cleaned_text):
-                logger.info(f"快速解析+清洗成功 | 最终长度={cleaned_length}")
-                return cleaned_text
-            else:
-                logger.warning(f"触发兜底机制 | 原因=清洗后内容为空 | 文件={file_path}")
-        
-        # 4. 兜底：使用高质量解析
-        logger.info(f"使用高质量解析兜底 | 文件={file_path}")
-        return await self.parse_document_quality(file_path, doc_type, minio_client)
+        raise NotImplementedError(
+            "此方法已废弃。请使用新的 PDFProcessor:\n"
+            "  from services.document.processors import PDFProcessor\n"
+            "  processor = PDFProcessor(doc_id, db, crud, vector_service, ...)\n"
+            "  await processor.process()"
+        )
     
     async def _parse_kb_document(
         self,
@@ -278,24 +245,19 @@ class ParsingService:
         doc_id: str
     ) -> Optional[str]:
         """
-        知识库轨道解析流程：高质量解析 + 图片处理
+        知识库轨道解析流程（已废弃）
+        
+        警告: 此方法已废弃（需求 5.4），请使用新的 PDFProcessor 替代。
         """
-        zip_content = await self.parse_document_quality_get_zip(
-            file_path,
-            doc_type,
-            minio_client
+        warnings.warn(
+            "_parse_kb_document() 已废弃（需求 5.4），请使用 PDFProcessor 替代",
+            DeprecationWarning,
+            stacklevel=2
         )
         
-        if not zip_content:
-            return None
-        
-        markdown_text = await self.process_zip_and_upload_images(
-            zip_content,
-            kb_id,
-            doc_id,
-            minio_client
+        raise NotImplementedError(
+            "此方法已废弃。请使用新的 PDFProcessor。"
         )
-        return markdown_text
     
     async def process_zip_and_upload_images(
         self,
@@ -305,13 +267,13 @@ class ParsingService:
         minio_client
     ) -> Optional[str]:
         """
-        处理解析服务返回的ZIP包（知识库轨道专用）
+        处理解析服务返回的ZIP包（已废弃）
         
-        功能：
-        1. 提取Markdown文件
-        2. 提取所有图片
-        3. 将图片上传到MinIO
-        4. 重写Markdown中的图片路径为MinIO URL
+        警告: 此方法已废弃（需求 5.3），请使用新的 OCR 模块替代。
+        
+        新的图片处理流程:
+        - 使用 services.ocr.extract_and_upload_images() 处理图片
+        - 图片直接从 PDF 裁剪，不再从 ZIP 提取
         
         Args:
             zip_content: ZIP文件的二进制内容
@@ -321,75 +283,23 @@ class ParsingService:
             
         Returns:
             处理后的Markdown文本
+            
+        Raises:
+            DeprecationWarning: 此方法已废弃
         """
-        try:
-            zip_file = zipfile.ZipFile(io.BytesIO(zip_content))
-            
-            markdown_text = None
-            path_mappings = {}
-            
-            # 1. 找到Markdown文件
-            markdown_file_path = None
-            image_paths = []
-            
-            for file_path in zip_file.namelist():
-                if file_path.endswith('.md'):
-                    markdown_file_path = file_path
-                elif file_path.startswith('images/') and not file_path.endswith('/'):
-                    image_paths.append(file_path)
-            
-            if not markdown_file_path:
-                logger.error("ZIP中未找到Markdown文件")
-                return None
-            
-            # 2. 上传图片到MinIO
-            logger.info(f"开始上传图片 | 数量={len(image_paths)} | kb_id={kb_id} | doc_id={doc_id}")
-            
-            for idx, image_path in enumerate(image_paths):
-                with zip_file.open(image_path) as image_file:
-                    image_bytes = image_file.read()
-                
-                image_filename = os.path.basename(image_path)
-                image_size = len(image_bytes)
-                minio_object_name = f"kbs/{kb_id}/{doc_id}/images/{image_filename}"
-                
-                # 使用MinIOStorage的upload_file_bytes方法上传
-                minio_url = await minio_client.upload_file_bytes(
-                    bucket_name=minio_client.doc_bucket,
-                    object_name=minio_object_name,
-                    file_bytes=image_bytes,
-                    content_type=self._get_image_content_type(image_filename)
-                )
-                
-                path_mappings[image_path] = minio_url
-                logger.info(f"图片已上传 | 索引={idx+1}/{len(image_paths)} | 文件={image_filename} | 大小={image_size}bytes")
-                logger.debug(f"图片URL | {minio_url}")
-            
-            # 3. 提取Markdown并替换路径
-            with zip_file.open(markdown_file_path) as md_file:
-                markdown_text = md_file.read().decode('utf-8')
-            
-            # 4. 替换所有图片路径
-            for original_path, new_url in path_mappings.items():
-                markdown_text = markdown_text.replace(original_path, new_url)
-            
-            # 5. 保存处理后的Markdown到MinIO（便于调试和恢复）
-            processed_md_object_name = f"kbs/{kb_id}/{doc_id}/processed/final.md"
-            await minio_client.upload_file_bytes(
-                bucket_name=minio_client.doc_bucket,
-                object_name=processed_md_object_name,
-                file_bytes=markdown_text.encode('utf-8'),
-                content_type='text/markdown; charset=utf-8'
-            )
-            logger.info(f"处理后的Markdown已保存: {processed_md_object_name}")
-            
-            logger.info(f"ZIP处理完成 | 图片数={len(path_mappings)} | Markdown长度={len(markdown_text)}")
-            logger.debug(f"处理后的Markdown已保存 | 路径={processed_md_object_name}")
-            return markdown_text
-            
-        except Exception as e:
-            logger.error(f"处理ZIP失败: {e}")
-            return None
+        warnings.warn(
+            "process_zip_and_upload_images() 已废弃（需求 5.3），请使用 extract_and_upload_images() 替代",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
+        raise NotImplementedError(
+            "此方法已废弃。请使用新的图片处理流程:\n"
+            "  from services.ocr import extract_and_upload_images\n"
+            "  blocks = await extract_and_upload_images(\n"
+            "      pdf_bytes, blocks, kb_id, doc_id, storage_service\n"
+            "  )"
+        )
     
     @staticmethod
     def _get_image_content_type(filename: str) -> str:

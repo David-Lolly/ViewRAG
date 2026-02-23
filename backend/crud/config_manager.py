@@ -55,20 +55,29 @@ class ConfigManager:
     def load_config(self):
         """
         从 YAML 文件加载配置。
+        支持处理 config.yaml 被错误挂载为目录的情况。
         """
         logger.info(f"正在从 {self._CONFIG_PATH} 加载配置...")
         try:
-            if not self._CONFIG_PATH.exists():
-                logger.warning(f"配置文件 {self._CONFIG_PATH} 不存在，使用默认空配置。")
+            # 策略：确定实际读取的文件路径
+            read_path = self._CONFIG_PATH
+            if read_path.exists() and read_path.is_dir():
+                # 如果 config.yaml 是目录，尝试读取其下的 config.yaml
+                # 这是针对 Docker 挂载空文件导致变为目录的一种容错
+                read_path = read_path / "config.yaml"
+                logger.warning(f"检测到 config.yaml 是目录，尝试读取其下的子文件: {read_path}")
+
+            if not read_path.exists() or not read_path.is_file():
+                logger.warning(f"配置文件 {read_path} 不存在或不是文件，使用默认空配置。")
                 self._config = {"Basic_Config": {}, "Model_Config": {}}
                 return
             
-            with open(self._CONFIG_PATH, 'r', encoding='utf-8') as f:
+            with open(read_path, 'r', encoding='utf-8') as f:
                 self._config = yaml.safe_load(f) or {}
             logger.info("配置已成功加载。")
         except Exception as e:
-            logger.error(f"加载配置文件失败: {e}", exc_info=True)
-            raise RuntimeError(f"无法加载或解析 config.yaml: {e}")
+            logger.error(f"加载配置文件失败: {e}，将使用默认空配置", exc_info=True)
+            self._config = {"Basic_Config": {}, "Model_Config": {}}
 
     def validate_config(self):
         """
@@ -133,6 +142,18 @@ class ConfigManager:
         # 基础配置
         if 'Basic_Config' in config:
             ordered_config['Basic_Config'] = config['Basic_Config']
+
+        # OCR 配置
+        if 'OCR_Config' in config:
+            ordered_config['OCR_Config'] = config['OCR_Config']
+            
+        # 数据库配置
+        if 'Database_Config' in config:
+            ordered_config['Database_Config'] = config['Database_Config']
+
+        # MinIO 配置
+        if 'MinIO_Config' in config:
+            ordered_config['MinIO_Config'] = config['MinIO_Config']
         
         # 模型配置
         if 'Model_Config' in config:
@@ -178,28 +199,35 @@ class ConfigManager:
 
     def save_config(self, new_config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        保存配置到 YAML 文件并重新加载。
-        
-        Args:
-            new_config: 新的完整配置字典
-            
-        Returns:
-            更新后的配置字典
+        保存配置到 YAML 文件，并更新内存中的配置。
+        支持配置热更新。
         """
         with self._lock:
             try:
-                # 备份现有配置
-                backup_path = self._CONFIG_PATH.with_suffix('.yaml.bak')
-                if self._CONFIG_PATH.exists():
+                # 确定写入路径
+                write_path = self._CONFIG_PATH
+                
+                # 如果 config.yaml 是目录（Docker 挂载空文件导致），尝试写入其下的 config.yaml
+                if write_path.exists() and write_path.is_dir():
+                    write_path = write_path / "config.yaml"
+                    logger.warning(f"检测到 config.yaml 是目录，将配置写入到: {write_path}")
+                
+                # 备份现有配置 (仅当它是文件时)
+                backup_path = write_path.with_suffix('.yaml.bak')
+                if write_path.exists() and write_path.is_file():
                     import shutil
-                    shutil.copy2(self._CONFIG_PATH, backup_path)
+                    shutil.copy2(write_path, backup_path)
                     logger.info(f"已备份现有配置到 {backup_path}")
                 
                 # 对配置字段排序
                 ordered_config = self._order_config_structure(new_config)
                 
+                # 确保父目录存在
+                if not write_path.parent.exists():
+                    write_path.parent.mkdir(parents=True, exist_ok=True)
+
                 # 写入新配置，使用 OrderedDumper 保持顺序
-                with open(self._CONFIG_PATH, 'w', encoding='utf-8') as f:
+                with open(write_path, 'w', encoding='utf-8') as f:
                     yaml.dump(ordered_config, f, Dumper=OrderedDumper, 
                             allow_unicode=True, default_flow_style=False, sort_keys=False)
                 
@@ -207,19 +235,14 @@ class ConfigManager:
                 self.load_config()
                 logger.info("配置已成功保存并重新加载。")
                 return self._config
+            except IsADirectoryError:
+                 logger.error(f"无法写入配置，路径存在且为目录: {self._CONFIG_PATH}")
+                 raise RuntimeError("无法保存配置: 目标路径是一个目录。")
             except Exception as e:
                 logger.error(f"保存配置失败: {e}", exc_info=True)
                 raise RuntimeError(f"无法保存配置到 config.yaml: {e}")
 
     # === 基本配置访问方法 ===
-    
-    def get_retrieval_version(self) -> str:
-        """获取召回版本 (v1 或 v2)"""
-        return self._config.get('Basic_Config', {}).get('RETRIEVAL_VERSION', 'v2')
-    
-    def get_retrieval_quality(self) -> str:
-        """获取召回质量 (high, medium, low)"""
-        return self._config.get('Basic_Config', {}).get('RETRIEVAL_QUALITY', 'high')
     
     def is_active(self) -> bool:
         """检查系统是否已通过前端配置激活"""
@@ -227,22 +250,27 @@ class ConfigManager:
     
     def activate_system(self):
         """将 IS_ACTIVE 字段设置为 True 并写回文件"""
+        # 修改内存中的配置副本
+        # 注意：这里我们通过 save_config 来进行持久化和重新加载，避免代码重复和死锁
+        # 但我们需要确保操作原子性。由于 save_config 有锁，我们可以在这里先构建好配置，再调用 save_config
+        
+        # 为了避免竞争条件，我们应该在一个锁内读取 old config，修改，然后保存。
+        # 但是 save_config 也加锁...
+        # 简单做法：
         with self._lock:
+            # 修改内存配置
             if 'Basic_Config' not in self._config:
                 self._config['Basic_Config'] = {}
             self._config['Basic_Config']['IS_ACTIVE'] = True
-            
-            try:
-                # 对配置排序
-                ordered_config = self._order_config_structure(self._config)
-                
-                with open(self._CONFIG_PATH, 'w', encoding='utf-8') as f:
-                    yaml.dump(ordered_config, f, Dumper=OrderedDumper,
-                            allow_unicode=True, default_flow_style=False, sort_keys=False)
-                logger.info("系统已成功激活 (IS_ACTIVE = True)。")
-            except Exception as e:
-                logger.error(f"激活系统失败: {e}", exc_info=True)
-                raise RuntimeError(f"无法更新 config.yaml: {e}")
+            new_config = self._config.copy()
+        
+        # 调用 save_config (它会再次获取锁，但这是安全的，因为我们已经释放了上面的锁)
+        try:
+            self.save_config(new_config)
+            logger.info("系统已成功激活 (IS_ACTIVE = True)。")
+        except Exception as e:
+            logger.error(f"激活系统失败: {e}", exc_info=True)
+            raise RuntimeError(f"无法更新 config.yaml: {e}")
 
     # === 模型配置访问方法 ===
     
@@ -282,6 +310,57 @@ class ConfigManager:
         """获取重排序模型配置"""
         return self._config.get('Model_Config', {}).get('Rerank', {}).get('rerank_model')
     
+    # === OCR 配置访问方法 ===
+    
+    def get_ocr_parser(self) -> str:
+        """
+        获取 OCR 解析器名称
+        
+        Returns:
+            解析器名称，默认为 'paddle_ocr'
+        """
+        return self._config.get('OCR_Config', {}).get('parser', 'paddle_ocr')
+    
+    def get_ocr_config(self, parser_name: str = None) -> Dict[str, Any]:
+        """
+        获取指定 OCR 解析器的配置
+        
+        Args:
+            parser_name: 解析器名称，为 None 时使用配置文件中指定的解析器
+            
+        Returns:
+            解析器配置字典，包含 api_url、api_token、timeout 等
+        """
+        if parser_name is None:
+            parser_name = self.get_ocr_parser()
+        
+        ocr_config = self._config.get('OCR_Config', {})
+        parser_config = ocr_config.get(parser_name, {})
+        
+        # 提供默认值
+        defaults = {
+            'paddle_ocr': {
+                'api_url': 'https://rcw8sc15r6j7afsb.aistudio-app.com/layout-parsing',
+                'api_token': '',
+                'timeout': 300
+            }
+        }
+        
+        default_config = defaults.get(parser_name, {})
+        
+        # 合并配置，用户配置优先
+        result = {**default_config, **parser_config}
+        return result
+    
+    def get_paddle_ocr_config(self) -> Dict[str, Any]:
+        """
+        获取 PaddleOCR 解析器配置
+        
+        Returns:
+            包含 api_url、api_token、timeout 的配置字典
+        """
+        return self.get_ocr_config('paddle_ocr')
+    
     # === 兼容旧接口的方法 ===
     
     def get(self, key: str, default=None):
@@ -290,11 +369,7 @@ class ConfigManager:
         警告: 建议使用具体的 get_xxx_model() 方法。
         """
         # 尝试从不同位置获取配置
-        if key == 'retrieval_version':
-            return self.get_retrieval_version()
-        elif key == 'retrieval_quality':
-            return self.get_retrieval_quality()
-        elif key == 'active':
+        if key == 'active':
             return self.is_active()
         
         # 尝试从模型配置中查找
