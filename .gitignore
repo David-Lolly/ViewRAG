@@ -31,4 +31,5 @@ bug.md
 alembic.ini
 .kiroignore
 docker/mount/
+docker/config.yaml
 .vscode
